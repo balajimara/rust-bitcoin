@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: CC0-1.0
 
 use core::convert::TryFrom;
-
+use crate::hashes::Hash;
 use crate::bip32::{ChildNumber, DerivationPath, Fingerprint, Xpub};
 use crate::blockdata::transaction::Transaction;
 use crate::consensus::encode::MAX_VEC_SIZE;
 use crate::consensus::{encode, Decodable};
 use crate::io::{self, Cursor, Read};
-use crate::prelude::*;
+use crate::{prelude::*, Txid};
 use crate::psbt::map::Map;
 use crate::psbt::{raw, Error, Psbt};
 
@@ -96,6 +96,10 @@ impl Psbt {
                                     // properly.
                                     tx = Some(Transaction {
                                         version: Decodable::consensus_decode(&mut decoder)?,
+                                        assettype: 0,
+                                        headline: "".to_string(),
+                                        ticker: "".to_string(),
+                                        payload: Txid::all_zeros(),
                                         input: Decodable::consensus_decode(&mut decoder)?,
                                         output: Decodable::consensus_decode(&mut decoder)?,
                                         lock_time: Decodable::consensus_decode(&mut decoder)?,

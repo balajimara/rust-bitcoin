@@ -385,6 +385,10 @@ mod test {
     fn dummy_tx(nonce: &[u8]) -> Transaction {
         Transaction {
             version: transaction::Version::ONE,
+            assettype: 0,
+            headline: "".to_string(),
+            ticker: "".to_string(),
+            payload: Txid::all_zeros(),
             lock_time: absolute::LockTime::from_consensus(2),
             input: vec![TxIn {
                 previous_output: OutPoint::new(Txid::hash(nonce), 0),

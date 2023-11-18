@@ -749,9 +749,9 @@ impl FromStr for Address<NetworkUnchecked> {
         // try bech32
         let bech32_network = match find_bech32_prefix(s) {
             // note that upper or lowercase is allowed but NOT mixed case
-            "bc" | "BC" => Some(Network::Bitcoin),
-            "tb" | "TB" => Some(Network::Testnet), // this may also be signet
-            "bcrt" | "BCRT" => Some(Network::Regtest),
+            "cc" | "CC" => Some(Network::Bitcoin),
+            "tc" | "TC" => Some(Network::Testnet), // this may also be signet
+            "ccrt" | "CCRT" => Some(Network::Regtest),
             _ => None,
         };
         if let Some(network) = bech32_network {

@@ -620,6 +620,14 @@ fn size_from_script_pubkey(script_pubkey: &Script) -> usize {
 pub struct Transaction {
     /// The protocol version, is currently expected to be 1 or 2 (BIP 68).
     pub version: Version,
+    /// Asset type 
+    pub assettype: i32,
+    /// Asset Symbol 
+    pub ticker: String,
+    /// Asset name 
+    pub headline: String,
+    /// Asset hash for data 
+    pub payload: Txid,
     /// Block height or timestamp. Transaction cannot be included in a block until this height/time.
     ///
     /// ### Relevant BIPs
@@ -658,6 +666,10 @@ impl Transaction {
     pub fn ntxid(&self) -> sha256d::Hash {
         let cloned_tx = Transaction {
             version: self.version,
+            assettype: self.assettype,
+            ticker: self.ticker.to_string(),
+            headline: self.headline.to_string(),
+            payload: self.payload,
             lock_time: self.lock_time,
             input: self
                 .input
@@ -1088,6 +1100,16 @@ impl Decodable for Transaction {
         r: &mut R,
     ) -> Result<Self, encode::Error> {
         let version = Version::consensus_decode_from_finite_reader(r)?;
+        let mut assettype = 0;
+        let mut ticker = "".to_string();
+        let mut headline = "".to_string();
+        let mut payload = Txid::all_zeros();
+        if version.0 == 10 {
+           assettype = i32::consensus_decode_from_finite_reader(r)?;
+           ticker = String::consensus_decode_from_finite_reader(r)?;
+           headline = String::consensus_decode_from_finite_reader(r)?;
+           payload = Txid::consensus_decode_from_finite_reader(r)?;
+        }
         let input = Vec::<TxIn>::consensus_decode_from_finite_reader(r)?;
         // segwit
         if input.is_empty() {
@@ -1105,6 +1127,10 @@ impl Decodable for Transaction {
                     } else {
                         Ok(Transaction {
                             version,
+                            assettype,
+                            ticker,
+                            headline,
+                            payload,
                             input,
                             output,
                             lock_time: Decodable::consensus_decode_from_finite_reader(r)?,
@@ -1118,6 +1144,10 @@ impl Decodable for Transaction {
         } else {
             Ok(Transaction {
                 version,
+                assettype,
+                ticker,
+                headline,
+                payload,
                 input,
                 output: Decodable::consensus_decode_from_finite_reader(r)?,
                 lock_time: Decodable::consensus_decode_from_finite_reader(r)?,
@@ -1975,6 +2005,10 @@ mod tests {
 
         let empty_transaction_weight = Transaction {
             version: Version::TWO,
+            assettype: 0,
+            headline: "".to_string(),
+            ticker: "".to_string(),
+            payload: Txid::all_zeros(),
             lock_time: absolute::LockTime::ZERO,
             input: vec![],
             output: vec![],

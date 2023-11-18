@@ -4,7 +4,7 @@
 use core::convert::TryFrom;
 use std::collections::BTreeMap;
 use std::str::FromStr;
-
+use bitcoin::hashes::Hash;
 use bitcoin::bip32::{Fingerprint, IntoDerivationPath, KeySource, Xpriv, Xpub};
 use bitcoin::blockdata::opcodes::OP_0;
 use bitcoin::blockdata::{script, transaction};
@@ -15,7 +15,7 @@ use bitcoin::script::PushBytes;
 use bitcoin::secp256k1::{self, Secp256k1};
 use bitcoin::{
     absolute, Amount, Denomination, Network, OutPoint, PrivateKey, PublicKey, ScriptBuf, Sequence,
-    Transaction, TxIn, TxOut, Witness,
+    Transaction, TxIn, TxOut, Witness, Txid,
 };
 
 const NETWORK: Network = Network::Testnet;
@@ -161,6 +161,10 @@ fn create_transaction() -> Transaction {
 
     Transaction {
         version: transaction::Version::TWO,
+        assettype: 0,
+        headline: "".to_string(),
+        ticker: "".to_string(),
+        payload: Txid::all_zeros(),
         lock_time: absolute::LockTime::ZERO,
         input: vec![
             TxIn {

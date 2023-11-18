@@ -19,7 +19,7 @@ use internals::write_err;
 
 use crate::blockdata::witness::Witness;
 use crate::consensus::{encode, Encodable};
-use crate::prelude::*;
+use crate::{prelude::*, Txid};
 use crate::taproot::{LeafVersion, TapLeafHash, TAPROOT_ANNEX_PREFIX};
 use crate::{io, Amount, Script, ScriptBuf, Sequence, Transaction, TxIn, TxOut};
 
@@ -1024,6 +1024,10 @@ impl<R: Borrow<Transaction>> SighashCache<R> {
             // Build tx to sign
             let mut tx = Transaction {
                 version: self_.version,
+                assettype: 0,
+                headline: "".to_string(),
+                ticker: "".to_string(),
+                payload: Txid::all_zeros(),
                 lock_time: self_.lock_time,
                 input: vec![],
                 output: vec![],
@@ -1316,6 +1320,7 @@ mod tests {
     use hex::{test_hex_unwrap as hex, FromHex};
 
     use super::*;
+    use crate::Txid;
     use crate::blockdata::locktime::absolute;
     use crate::blockdata::transaction;
     use crate::consensus::deserialize;
@@ -1331,6 +1336,10 @@ mod tests {
         // We need a tx with more inputs than outputs.
         let tx = Transaction {
             version: transaction::Version::ONE,
+            assettype: 0,
+            headline: "".to_string(),
+            ticker: "".to_string(),
+            payload: Txid::all_zeros(),
             lock_time: absolute::LockTime::ZERO,
             input: vec![TxIn::default(), TxIn::default()],
             output: vec![TxOut::NULL],
@@ -1518,6 +1527,10 @@ mod tests {
     fn test_sighash_errors() {
         let dumb_tx = Transaction {
             version: transaction::Version::TWO,
+            assettype: 0,
+            headline: "".to_string(),
+            ticker: "".to_string(),
+            payload: Txid::all_zeros(),
             lock_time: absolute::LockTime::ZERO,
             input: vec![TxIn::default()],
             output: vec![],

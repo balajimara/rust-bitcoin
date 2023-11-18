@@ -22,7 +22,7 @@ use crate::blockdata::witness::Witness;
 use crate::internal_macros::impl_bytes_newtype;
 use crate::network::Network;
 use crate::pow::CompactTarget;
-use crate::Amount;
+use crate::{Amount, Txid};
 
 /// How many seconds between blocks we expect on average.
 pub const TARGET_BLOCK_SPACING: u32 = 600;
@@ -57,6 +57,10 @@ fn bitcoin_genesis_tx() -> Transaction {
     // Base
     let mut ret = Transaction {
         version: transaction::Version::ONE,
+        assettype: 0,
+        headline: "".to_string(),
+        ticker: "".to_string(),
+        payload: Txid::all_zeros(),
         lock_time: absolute::LockTime::ZERO,
         input: vec![],
         output: vec![],
