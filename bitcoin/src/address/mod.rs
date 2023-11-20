@@ -375,9 +375,9 @@ impl<V: NetworkValidation> Address<V> {
             Network::Testnet | Network::Signet | Network::Regtest => SCRIPT_ADDRESS_PREFIX_TEST,
         };
         let hrp = match self.network() {
-            Network::Bitcoin => hrp::BC,
-            Network::Testnet | Network::Signet => hrp::TB,
-            Network::Regtest => hrp::BCRT,
+            Network::Bitcoin => Hrp::parse_unchecked("cc"),
+            Network::Testnet | Network::Signet => Hrp::parse_unchecked("tc"),
+            Network::Regtest => Hrp::parse_unchecked("ccrt"),
         };
         let encoding = AddressEncoding { payload: self.payload(), p2pkh_prefix, p2sh_prefix, hrp };
 
