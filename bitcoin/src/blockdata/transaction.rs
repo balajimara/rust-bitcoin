@@ -693,6 +693,13 @@ impl Transaction {
     pub fn txid(&self) -> Txid {
         let mut enc = Txid::engine();
         self.version.consensus_encode(&mut enc).expect("engines don't error");
+        if self.version.0 == 10 {
+           self.assettype.consensus_encode(&mut enc).expect("engines don't error");
+           self.ticker.consensus_encode(&mut enc).expect("engines don't error");
+           self.headline.consensus_encode(&mut enc).expect("engines don't error");
+           self.payload.consensus_encode(&mut enc).expect("engines don't error");
+        }
+
         self.input.consensus_encode(&mut enc).expect("engines don't error");
         self.output.consensus_encode(&mut enc).expect("engines don't error");
         self.lock_time.consensus_encode(&mut enc).expect("engines don't error");
