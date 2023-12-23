@@ -629,7 +629,7 @@ pub struct Transaction {
     /// Asset hash for data 
     pub payload: Txid,
     /// Asset name 
-    pub payload: String,
+    pub payloaddata: String,
     /// Block height or timestamp. Transaction cannot be included in a block until this height/time.
     ///
     /// ### Relevant BIPs
