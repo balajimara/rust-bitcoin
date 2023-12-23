@@ -100,6 +100,7 @@ impl Psbt {
                                         headline: "".to_string(),
                                         ticker: "".to_string(),
                                         payload: Txid::all_zeros(),
+                                        payloaddata: "".to_string(),
                                         input: Decodable::consensus_decode(&mut decoder)?,
                                         output: Decodable::consensus_decode(&mut decoder)?,
                                         lock_time: Decodable::consensus_decode(&mut decoder)?,

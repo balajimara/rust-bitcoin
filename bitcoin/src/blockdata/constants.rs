@@ -61,6 +61,7 @@ fn bitcoin_genesis_tx() -> Transaction {
         headline: "".to_string(),
         ticker: "".to_string(),
         payload: Txid::all_zeros(),
+        payloaddata: "".to_string(),
         lock_time: absolute::LockTime::ZERO,
         input: vec![],
         output: vec![],

@@ -1038,6 +1038,7 @@ mod tests {
                 headline: "".to_string(),
                 ticker: "".to_string(),
                 payload: Txid::all_zeros(),
+                payloaddata: "".to_string(),
                 lock_time: absolute::LockTime::ZERO,
                 input: vec![TxIn {
                     previous_output: OutPoint {
@@ -1086,6 +1087,7 @@ mod tests {
                 headline: "".to_string(),
                 ticker: "".to_string(),
                 payload: Txid::all_zeros(),
+                payloaddata: "".to_string(),
                 lock_time: absolute::LockTime::ZERO,
                 input: vec![],
                 output: vec![],
@@ -1206,6 +1208,7 @@ mod tests {
                 headline: "".to_string(),
                 ticker: "".to_string(),
                 payload: Txid::all_zeros(),
+                payloaddata: "".to_string(),
                 lock_time: absolute::LockTime::from_consensus(1257139),
                 input: vec![TxIn {
                     previous_output: OutPoint {
@@ -1281,6 +1284,7 @@ mod tests {
             headline: "".to_string(),
             ticker: "".to_string(),
             payload: Txid::all_zeros(),
+            payloaddata: "".to_string(),
             lock_time: absolute::LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint {
@@ -1473,6 +1477,7 @@ mod tests {
                     headline: "".to_string(),
                     ticker: "".to_string(),
                     payload: Txid::all_zeros(),
+                    payloaddata: "".to_string(),
                     lock_time: absolute::LockTime::from_consensus(1257139),
                     input: vec![
                         TxIn {
@@ -1509,6 +1514,7 @@ mod tests {
                             headline: "".to_string(),
                             ticker: "".to_string(),
                             payload: Txid::all_zeros(),
+                            payloaddata: "".to_string(),
                             lock_time: absolute::LockTime::ZERO,
                             input: vec![
                                 TxIn {
@@ -1813,6 +1819,7 @@ mod tests {
                 headline: "".to_string(),
                 ticker: "".to_string(),
                 payload: Txid::all_zeros(),
+                payloaddata: "".to_string(),
                 lock_time: absolute::LockTime::from_consensus(1257139),
                 input: vec![
                     TxIn {
@@ -1849,6 +1856,7 @@ mod tests {
                         headline: "".to_string(),
                         ticker: "".to_string(),
                         payload: Txid::all_zeros(),
+                        payloaddata: "".to_string(),
                         lock_time: absolute::LockTime::ZERO,
                         input: vec![
                             TxIn {
@@ -1990,6 +1998,7 @@ mod tests {
                 headline: "".to_string(),
                 ticker: "".to_string(),
                 payload: Txid::all_zeros(),
+                payloaddata: "".to_string(),
                 lock_time: absolute::LockTime::from_consensus(1257139),
                 input: vec![
                     TxIn {
@@ -2025,6 +2034,7 @@ mod tests {
                         headline: "".to_string(),
                         ticker: "".to_string(),
                         payload: Txid::all_zeros(),
+                        payloaddata: "".to_string(),
                         lock_time: absolute::LockTime::ZERO,
                         input: vec![
                             TxIn {
@@ -2107,6 +2117,7 @@ mod tests {
             headline: "".to_string(),
             ticker: "".to_string(),
             payload: Txid::all_zeros(),
+            payloaddata: "".to_string(),
             lock_time: absolute::LockTime::ZERO,
             input: vec![TxIn::default(), TxIn::default()],
             output: vec![TxOut::NULL],

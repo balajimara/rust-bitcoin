@@ -628,6 +628,8 @@ pub struct Transaction {
     pub headline: String,
     /// Asset hash for data 
     pub payload: Txid,
+    /// Asset name 
+    pub payload: String,
     /// Block height or timestamp. Transaction cannot be included in a block until this height/time.
     ///
     /// ### Relevant BIPs
@@ -670,6 +672,7 @@ impl Transaction {
             ticker: self.ticker.to_string(),
             headline: self.headline.to_string(),
             payload: self.payload,
+            payloaddata: self.payloaddata.to_string(),
             lock_time: self.lock_time,
             input: self
                 .input
@@ -698,6 +701,7 @@ impl Transaction {
            self.ticker.consensus_encode(&mut enc).expect("engines don't error");
            self.headline.consensus_encode(&mut enc).expect("engines don't error");
            self.payload.consensus_encode(&mut enc).expect("engines don't error");
+           self.payloaddata.consensus_encode(&mut enc).expect("engines don't error");
         }
 
         self.input.consensus_encode(&mut enc).expect("engines don't error");
@@ -1111,11 +1115,13 @@ impl Decodable for Transaction {
         let mut ticker = "".to_string();
         let mut headline = "".to_string();
         let mut payload = Txid::all_zeros();
+        let mut payloaddata = "".to_string();
         if version.0 == 10 {
            assettype = i32::consensus_decode_from_finite_reader(r)?;
            ticker = String::consensus_decode_from_finite_reader(r)?;
            headline = String::consensus_decode_from_finite_reader(r)?;
            payload = Txid::consensus_decode_from_finite_reader(r)?;
+           payloaddata = String::consensus_decode_from_finite_reader(r)?;
         }
         let input = Vec::<TxIn>::consensus_decode_from_finite_reader(r)?;
         // segwit
@@ -1138,6 +1144,7 @@ impl Decodable for Transaction {
                             ticker,
                             headline,
                             payload,
+                            payloaddata,
                             input,
                             output,
                             lock_time: Decodable::consensus_decode_from_finite_reader(r)?,
@@ -1155,6 +1162,7 @@ impl Decodable for Transaction {
                 ticker,
                 headline,
                 payload,
+                payloaddata,
                 input,
                 output: Decodable::consensus_decode_from_finite_reader(r)?,
                 lock_time: Decodable::consensus_decode_from_finite_reader(r)?,
@@ -2016,6 +2024,7 @@ mod tests {
             headline: "".to_string(),
             ticker: "".to_string(),
             payload: Txid::all_zeros(),
+            payloaddata: "".to_string(),
             lock_time: absolute::LockTime::ZERO,
             input: vec![],
             output: vec![],

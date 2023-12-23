@@ -389,6 +389,7 @@ mod test {
             headline: "".to_string(),
             ticker: "".to_string(),
             payload: Txid::all_zeros(),
+            payloaddata: "".to_string(),
             lock_time: absolute::LockTime::from_consensus(2),
             input: vec![TxIn {
                 previous_output: OutPoint::new(Txid::hash(nonce), 0),

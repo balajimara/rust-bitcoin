@@ -226,6 +226,7 @@ fn serde_regression_psbt() {
         headline: "".to_string(),
         ticker: "".to_string(),
         payload: Txid::all_zeros(),
+        payloaddata: "".to_string(),
         lock_time: absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint {

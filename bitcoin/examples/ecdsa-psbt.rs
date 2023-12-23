@@ -182,6 +182,7 @@ impl WatchOnly {
             headline: "".to_string(),
             ticker: "".to_string(),
             payload: Txid::all_zeros(),
+            payloaddata: "".to_string(),
             lock_time: absolute::LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint { txid: INPUT_UTXO_TXID.parse()?, vout: INPUT_UTXO_VOUT },

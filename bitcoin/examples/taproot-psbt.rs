@@ -235,6 +235,7 @@ fn generate_bip86_key_spend_tx(
         headline: "".to_string(),
         ticker: "".to_string(),
         payload: Txid::all_zeros(),
+        payloaddata: "".to_string(),
         lock_time: absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint { txid: input_utxo.txid.parse()?, vout: input_utxo.vout },
@@ -431,6 +432,7 @@ impl BenefactorWallet {
             headline: "".to_string(),
             ticker: "".to_string(),
             payload: Txid::all_zeros(),
+            payloaddata: "".to_string(),
             lock_time,
             input: vec![TxIn {
                 previous_output: OutPoint { txid: tx.txid(), vout: 0 },
@@ -578,6 +580,7 @@ impl BenefactorWallet {
                 headline: "".to_string(),
                 ticker: "".to_string(),
                 payload: Txid::all_zeros(),
+                payloaddata: "".to_string(),
                 lock_time,
                 input: vec![TxIn {
                     previous_output: OutPoint { txid: tx.txid(), vout: 0 },
