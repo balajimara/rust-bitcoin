@@ -672,7 +672,7 @@ impl Transaction {
             ticker: self.ticker.to_string(),
             headline: self.headline.to_string(),
             payload: self.payload,
-            payloaddata: self.payloaddata.to_string(),
+            // payloaddata: self.payloaddata.to_string(),
             lock_time: self.lock_time,
             input: self
                 .input
@@ -701,7 +701,7 @@ impl Transaction {
            self.ticker.consensus_encode(&mut enc).expect("engines don't error");
            self.headline.consensus_encode(&mut enc).expect("engines don't error");
            self.payload.consensus_encode(&mut enc).expect("engines don't error");
-           self.payloaddata.consensus_encode(&mut enc).expect("engines don't error");
+           // self.payloaddata.consensus_encode(&mut enc).expect("engines don't error");
         }
 
         self.input.consensus_encode(&mut enc).expect("engines don't error");
