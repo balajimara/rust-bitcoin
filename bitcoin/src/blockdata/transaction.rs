@@ -672,7 +672,7 @@ impl Transaction {
             ticker: self.ticker.to_string(),
             headline: self.headline.to_string(),
             payload: self.payload,
-            // payloaddata: self.payloaddata.to_string(),
+            payloaddata: self.payloaddata.to_string(),
             lock_time: self.lock_time,
             input: self
                 .input
