@@ -1025,6 +1025,7 @@ impl<R: Borrow<Transaction>> SighashCache<R> {
             let mut tx = Transaction {
                 version: self_.version,
                 assettype: 0,
+                precision: 0,
                 headline: "".to_string(),
                 ticker: "".to_string(),
                 payload: Txid::all_zeros(),
@@ -1338,6 +1339,7 @@ mod tests {
         let tx = Transaction {
             version: transaction::Version::ONE,
             assettype: 0,
+            precision: 0,
             headline: "".to_string(),
             ticker: "".to_string(),
             payload: Txid::all_zeros(),
@@ -1530,6 +1532,7 @@ mod tests {
         let dumb_tx = Transaction {
             version: transaction::Version::TWO,
             assettype: 0,
+            precision: 0,
             headline: "".to_string(),
             ticker: "".to_string(),
             payload: Txid::all_zeros(),

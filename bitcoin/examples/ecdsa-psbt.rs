@@ -179,6 +179,7 @@ impl WatchOnly {
         let tx = Transaction {
             version: transaction::Version::TWO,
             assettype: 0,
+            precision: 0,
             headline: "".to_string(),
             ticker: "".to_string(),
             payload: Txid::all_zeros(),

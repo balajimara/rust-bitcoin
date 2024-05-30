@@ -232,6 +232,7 @@ fn generate_bip86_key_spend_tx(
     let tx1 = Transaction {
         version: transaction::Version::TWO,
         assettype: 0,
+        precision: 0,
         headline: "".to_string(),
         ticker: "".to_string(),
         payload: Txid::all_zeros(),
@@ -429,6 +430,7 @@ impl BenefactorWallet {
         let next_tx = Transaction {
             version: transaction::Version::TWO,
             assettype: 0,
+            precision: 0,
             headline: "".to_string(),
             ticker: "".to_string(),
             payload: Txid::all_zeros(),
@@ -577,6 +579,7 @@ impl BenefactorWallet {
             let next_tx = Transaction {
                 version: transaction::Version::TWO,
                 assettype: 0,
+                precision: 0,
                 headline: "".to_string(),
                 ticker: "".to_string(),
                 payload: Txid::all_zeros(),

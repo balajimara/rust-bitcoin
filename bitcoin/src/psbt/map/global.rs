@@ -97,6 +97,7 @@ impl Psbt {
                                     tx = Some(Transaction {
                                         version: Decodable::consensus_decode(&mut decoder)?,
                                         assettype: 0,
+                                        precision: 0,
                                         headline: "".to_string(),
                                         ticker: "".to_string(),
                                         payload: Txid::all_zeros(),

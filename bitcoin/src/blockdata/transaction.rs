@@ -622,6 +622,8 @@ pub struct Transaction {
     pub version: Version,
     /// Asset type 
     pub assettype: i32,
+    /// Asset Precision
+    pub precision: i32,
     /// Asset Symbol 
     pub ticker: String,
     /// Asset name 
@@ -669,6 +671,7 @@ impl Transaction {
         let cloned_tx = Transaction {
             version: self.version,
             assettype: self.assettype,
+            precision: self.precision,
             ticker: self.ticker.to_string(),
             headline: self.headline.to_string(),
             payload: self.payload,
@@ -698,6 +701,7 @@ impl Transaction {
         self.version.consensus_encode(&mut enc).expect("engines don't error");
         if self.version.0 == 10 {
            self.assettype.consensus_encode(&mut enc).expect("engines don't error");
+           self.precision.consensus_encode(&mut enc).expect("engines don't error");
            self.ticker.consensus_encode(&mut enc).expect("engines don't error");
            self.headline.consensus_encode(&mut enc).expect("engines don't error");
            self.payload.consensus_encode(&mut enc).expect("engines don't error");
@@ -1112,12 +1116,14 @@ impl Decodable for Transaction {
     ) -> Result<Self, encode::Error> {
         let version = Version::consensus_decode_from_finite_reader(r)?;
         let mut assettype = 0;
+        let mut precision = 0;
         let mut ticker = "".to_string();
         let mut headline = "".to_string();
         let mut payload = Txid::all_zeros();
         let mut payloaddata = "".to_string();
         if version.0 == 10 {
            assettype = i32::consensus_decode_from_finite_reader(r)?;
+           precision = i32::consensus_decode_from_finite_reader(r)?;
            ticker = String::consensus_decode_from_finite_reader(r)?;
            headline = String::consensus_decode_from_finite_reader(r)?;
            payload = Txid::consensus_decode_from_finite_reader(r)?;
@@ -1141,6 +1147,7 @@ impl Decodable for Transaction {
                         Ok(Transaction {
                             version,
                             assettype,
+                            precision,
                             ticker,
                             headline,
                             payload,
@@ -1159,6 +1166,7 @@ impl Decodable for Transaction {
             Ok(Transaction {
                 version,
                 assettype,
+                precision,
                 ticker,
                 headline,
                 payload,
@@ -2021,6 +2029,7 @@ mod tests {
         let empty_transaction_weight = Transaction {
             version: Version::TWO,
             assettype: 0,
+            precision: 0,
             headline: "".to_string(),
             ticker: "".to_string(),
             payload: Txid::all_zeros(),

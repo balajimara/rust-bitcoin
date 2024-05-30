@@ -1035,6 +1035,7 @@ mod tests {
             unsigned_tx: Transaction {
                 version: transaction::Version::TWO,
                 assettype: 0,
+                precision: 0,
                 headline: "".to_string(),
                 ticker: "".to_string(),
                 payload: Txid::all_zeros(),
@@ -1084,6 +1085,7 @@ mod tests {
             unsigned_tx: Transaction {
                 version: transaction::Version::TWO,
                 assettype: 0,
+                precision: 0,
                 headline: "".to_string(),
                 ticker: "".to_string(),
                 payload: Txid::all_zeros(),
@@ -1205,6 +1207,7 @@ mod tests {
             unsigned_tx: Transaction {
                 version: transaction::Version::TWO,
                 assettype: 0,
+                precision: 0,
                 headline: "".to_string(),
                 ticker: "".to_string(),
                 payload: Txid::all_zeros(),
@@ -1281,6 +1284,7 @@ mod tests {
         let tx = Transaction {
             version: transaction::Version::ONE,
             assettype: 0,
+            precision: 0,
             headline: "".to_string(),
             ticker: "".to_string(),
             payload: Txid::all_zeros(),
@@ -1474,6 +1478,7 @@ mod tests {
                 unsigned_tx: Transaction {
                     version: transaction::Version::TWO,
                     assettype: 0,
+                    precision: 0,
                     headline: "".to_string(),
                     ticker: "".to_string(),
                     payload: Txid::all_zeros(),
@@ -1511,6 +1516,7 @@ mod tests {
                         non_witness_utxo: Some(Transaction {
                             version: transaction::Version::ONE,
                             assettype: 0,
+                            precision: 0,
                             headline: "".to_string(),
                             ticker: "".to_string(),
                             payload: Txid::all_zeros(),
@@ -1816,6 +1822,7 @@ mod tests {
             unsigned_tx: Transaction {
                 version: transaction::Version::TWO,
                 assettype: 0,
+                precision: 0,
                 headline: "".to_string(),
                 ticker: "".to_string(),
                 payload: Txid::all_zeros(),
@@ -1853,6 +1860,7 @@ mod tests {
                     non_witness_utxo: Some(Transaction {
                         version: transaction::Version::ONE,
                         assettype: 0,
+                        precision: 0,
                         headline: "".to_string(),
                         ticker: "".to_string(),
                         payload: Txid::all_zeros(),
@@ -1995,6 +2003,7 @@ mod tests {
             unsigned_tx: Transaction {
                 version: transaction::Version::TWO,
                 assettype: 0,
+                precision: 0,
                 headline: "".to_string(),
                 ticker: "".to_string(),
                 payload: Txid::all_zeros(),
@@ -2031,6 +2040,7 @@ mod tests {
                     non_witness_utxo: Some(Transaction {
                         version: transaction::Version::ONE,
                         assettype: 0,
+                        precision: 0,
                         headline: "".to_string(),
                         ticker: "".to_string(),
                         payload: Txid::all_zeros(),
@@ -2114,6 +2124,7 @@ mod tests {
         let unsigned_tx = Transaction {
             version: transaction::Version::TWO,
             assettype: 0,
+            precision: 0,
             headline: "".to_string(),
             ticker: "".to_string(),
             payload: Txid::all_zeros(),
