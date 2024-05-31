@@ -705,8 +705,8 @@ impl Transaction {
            self.ticker.consensus_encode(&mut enc).expect("engines don't error");
            self.headline.consensus_encode(&mut enc).expect("engines don't error");
            self.payload.consensus_encode(&mut enc).expect("engines don't error");
-           
-           let payload_data = self.payloaddata;
+
+           let payload_data = self.payloaddata.clone();
            payload_data = "".to_string();
            payload_data.consensus_encode(&mut enc).expect("engines don't error");
         }
