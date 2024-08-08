@@ -8,6 +8,7 @@
 //!
 
 use core::default::Default;
+use std::ptr::null;
 
 use hashes::{sha256d, Hash};
 use hex_lit::hex;
@@ -23,6 +24,8 @@ use crate::internal_macros::impl_bytes_newtype;
 use crate::network::Network;
 use crate::pow::CompactTarget;
 use crate::{Amount, Txid};
+
+use super::block::AuxPow;
 
 /// How many seconds between blocks we expect on average.
 pub const TARGET_BLOCK_SPACING: u32 = 600;
@@ -94,6 +97,9 @@ fn bitcoin_genesis_tx() -> Transaction {
 /// Constructs and returns the genesis block.
 pub fn genesis_block(network: Network) -> Block {
     let txdata = vec![bitcoin_genesis_tx()];
+    let invalid_tx = Vec::new();
+    let preconf_block = Vec::new();
+
     let hash: sha256d::Hash = txdata[0].txid().into();
     let merkle_root = hash.into();
     match network {
@@ -106,7 +112,13 @@ pub fn genesis_block(network: Network) -> Block {
                 bits: CompactTarget::from_consensus(0x1d00ffff),
                 nonce: 2083236893,
             },
+            auxpow: AuxPow::null(),
+            current_index: 0,
+            current_keys: "".to_string(),
             txdata,
+            invalid_tx,
+            preconf_block,
+            reconsiliation_block: Hash::all_zeros()
         },
         Network::Testnet => Block {
             header: block::Header {
@@ -117,7 +129,13 @@ pub fn genesis_block(network: Network) -> Block {
                 bits: CompactTarget::from_consensus(0x1d00ffff),
                 nonce: 414098458,
             },
+            auxpow: AuxPow::null(),
+            current_index: 0,
+            current_keys: "".to_string(),
             txdata,
+            invalid_tx,
+            preconf_block,
+            reconsiliation_block: Hash::all_zeros()
         },
         Network::Signet => Block {
             header: block::Header {
@@ -128,7 +146,13 @@ pub fn genesis_block(network: Network) -> Block {
                 bits: CompactTarget::from_consensus(0x1e0377ae),
                 nonce: 52613770,
             },
+            auxpow: AuxPow::null(),
+            current_index: 0,
+            current_keys: "".to_string(),
             txdata,
+            invalid_tx,
+            preconf_block,
+            reconsiliation_block: Hash::all_zeros()
         },
         Network::Regtest => Block {
             header: block::Header {
@@ -139,7 +163,13 @@ pub fn genesis_block(network: Network) -> Block {
                 bits: CompactTarget::from_consensus(0x207fffff),
                 nonce: 2,
             },
+            auxpow: AuxPow::null(),
+            current_index: 0,
+            current_keys: "".to_string(),
             txdata,
+            invalid_tx,
+            preconf_block,
+            reconsiliation_block: Hash::all_zeros()
         },
     }
 }

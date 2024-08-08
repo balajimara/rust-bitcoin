@@ -623,6 +623,7 @@ macro_rules! impl_vec {
 }
 impl_vec!(BlockHash);
 impl_vec!(block::Header);
+impl_vec!(block::SignedBlock);
 impl_vec!(FilterHash);
 impl_vec!(FilterHeader);
 impl_vec!(TxMerkleNode);
