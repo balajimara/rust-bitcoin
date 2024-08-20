@@ -114,7 +114,9 @@ impl fmt::Debug for Header {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(crate = "actual_serde"))]
 pub struct MerkleBranch {
     // pub branch_length: VarInt,
     /// Individual hash in the branch
@@ -143,7 +145,7 @@ impl Encodable for MerkleBranch {
 impl Decodable for MerkleBranch {
     fn consensus_decode_from_finite_reader<R: std::io::Read + ?Sized>(
         reader: &mut R,
-    ) -> Result<Self, chroma::consensus::encode::Error> {
+    ) -> Result<Self, encode::Error> {
         Ok(Self {
             branch_hash: Decodable::consensus_decode_from_finite_reader(reader)?,
             branch_side_mask: Decodable::consensus_decode_from_finite_reader(reader)?,
