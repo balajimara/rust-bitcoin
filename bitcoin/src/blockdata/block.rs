@@ -184,7 +184,7 @@ impl MerkleBranch {
 }
 
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(crate = "actual_serde"))]
 pub struct SignedBlock {
