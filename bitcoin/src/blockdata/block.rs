@@ -11,7 +11,6 @@
 use core::fmt;
 
 use hashes::{Hash, HashEngine};
-use hex_lit::hex;
 
 use super::Weight;
 use crate::blockdata::script;
@@ -28,65 +27,6 @@ use crate::{io, merkle_tree, Network, VarInt};
 pub use crate::{
     hash_types::BlockHash,
 };
-
-#[derive(PartialEq, Eq, Clone, PartialOrd, Ord, Hash, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(crate = "actual_serde"))]
-pub struct SignedBlock {
-    pub version: i32,
-    pub time: u32,
-    pub height: u64,
-    pub block_index: u64,
-    pub hash_prev_signed_block: BlockHash,
-    pub hash_merkle_root: BlockHash,
-    pub current_fee: i64,
-    pub vtx: Vec<Transaction>,
-
-}
-impl_consensus_encoding!(SignedBlock, version, time, height, block_index, hash_prev_signed_block, hash_merkle_root, current_fee, vtx);
-
-impl SignedBlock {
-    pub fn block_hash(&self) -> BlockHash {
-        let mut engine = BlockHash::engine();
-        self.consensus_encode(&mut engine).expect("engines don't error");
-        BlockHash::from_engine(engine)
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, PartialOrd, Ord, Hash, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(crate = "actual_serde"))]
-pub struct AuxPow {
-    pub coinbase_tx: Transaction,
-    pub merkle_branch: TxMerkleNode,
-    pub chain_merkle_branch: TxMerkleNode,
-    pub chain_index: u32,
-    pub parent_block: Header
-}
-
-impl_consensus_encoding!(AuxPow, coinbase_tx, merkle_branch, chain_merkle_branch, chain_index, parent_block);
-
-impl AuxPow { 
-    pub fn null() -> AuxPow { 
-        let raw_tx = hex!(SOME_TX);
-        let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-        const SOME_TX: &str = "0100000001a15d57094aa7a21a28cb20b59aab8fc7d1149a3bdbcddba9c622e4f5f6a99ece010000006c493046022100f93bb0e7d8db7bd46e40132d1f8242026e045f03a0efe71bbb8e3f475e970d790221009337cd7f1f929f00cc6ff01f03729b069a7c21b59b1736ddfee5db5946c5da8c0121033b9b137ee87d5a812d6f506efdd37f0affa7ffc310711c06c7f3e097c9447c52ffffffff0100e1f505000000001976a9140389035a9225b3839e2bbf32d826a1e222031fd888ac00000000";
-        AuxPow { 
-            coinbase_tx: tx, 
-            merkle_branch: TxMerkleNode::all_zeros(),
-            chain_merkle_branch: TxMerkleNode::all_zeros(),
-            chain_index: u32::MAX,
-            parent_block: Header {
-                version: Version::TWO,
-                prev_blockhash: BlockHash::all_zeros(),
-                merkle_root: TxMerkleNode::all_zeros(),
-                time: u32::MAX,
-                bits: CompactTarget::default(),
-                nonce:u32::MAX
-            }
-        } 
-    }
-}
 
 /// Bitcoin block header.
 ///
@@ -173,8 +113,6 @@ impl fmt::Debug for Header {
             .finish()
     }
 }
-
-
 
 /// Bitcoin block version number.
 ///
@@ -275,16 +213,11 @@ impl Decodable for Version {
 pub struct Block {
     /// The block header
     pub header: Header,
-    pub auxpow: AuxPow,
-    pub current_keys: String,
-    pub current_index: i32,
+    /// List of transactions contained in the block
     pub txdata: Vec<Transaction>,
-    pub preconf_block: Vec<SignedBlock>,
-    pub invalid_tx: Vec<BlockHash>,
-    pub reconsiliation_block: BlockHash,
 }
 
-impl_consensus_encoding!(Block, header, auxpow, current_keys, current_index, txdata, invalid_tx, preconf_block, reconsiliation_block);
+impl_consensus_encoding!(Block, header, txdata);
 
 impl Block {
     /// Returns the block hash.
@@ -340,17 +273,8 @@ impl Block {
 
     /// Computes the transaction merkle root.
     pub fn compute_merkle_root(&self) -> Option<TxMerkleNode> {
-        let mut leaves: Vec<TxMerkleNode> = Vec::new();
-        let preconf_hashes = self.preconf_block.iter().map(|obj| obj.block_hash().to_raw_hash());
-        leaves.push(merkle_tree::calculate_root(preconf_hashes).map(|h| h.into()).unwrap());
-
         let hashes = self.txdata.iter().map(|obj| obj.txid().to_raw_hash());
-        leaves.push(merkle_tree::calculate_root(hashes).map(|h| h.into()).unwrap());
-
-        let invalid_hashes = self.invalid_tx.iter().map(|obj| obj.to_raw_hash());
-        leaves.push(merkle_tree::calculate_root(invalid_hashes).map(|h| h.into()).unwrap());
-        let final_hash = leaves.into_iter().map(|obj| obj);
-        merkle_tree::calculate_root(final_hash).map(|h| h.into())
+        merkle_tree::calculate_root(hashes).map(|h| h.into())
     }
 
     /// Computes the witness commitment for the block's transaction list.
@@ -366,10 +290,6 @@ impl Block {
 
     /// Computes the merkle root of transactions hashed for witness.
     pub fn witness_root(&self) -> Option<WitnessMerkleNode> {
-        let mut leaves: Vec<WitnessMerkleNode> = Vec::new();
-        let preconf_hashes = self.preconf_block.iter().map(|obj| obj.block_hash().to_raw_hash());
-        leaves.push(merkle_tree::calculate_root(preconf_hashes).map(|h| h.into()).unwrap());
-
         let hashes = self.txdata.iter().enumerate().map(|(i, t)| {
             if i == 0 {
                 // Replace the first hash with zeroes.
@@ -378,13 +298,7 @@ impl Block {
                 t.wtxid().to_raw_hash()
             }
         });
-        leaves.push(merkle_tree::calculate_root(hashes).map(|h| h.into()).unwrap());
-
-        let invalid_hashes = self.invalid_tx.iter().map(|obj| obj.to_raw_hash());
-        leaves.push(merkle_tree::calculate_root(invalid_hashes).map(|h| h.into()).unwrap());
-
-        let final_hash = leaves.into_iter().map(|obj| obj);
-        merkle_tree::calculate_root(final_hash).map(|h| h.into())
+        merkle_tree::calculate_root(hashes).map(|h| h.into())
     }
 
     /// Returns the weight of the block.
