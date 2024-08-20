@@ -114,6 +114,56 @@ impl fmt::Debug for Header {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(crate = "actual_serde"))]
+pub struct SignedBlock {
+    version: i32,
+    block_time: u32,
+    block_height: u64,
+    mined_block_index: u64,
+    pub prev_block_hash: BlockHash,
+    pub merkle_root: TxMerkleNode,
+    pub current_fee: i64,
+    pub vtx: Vec<Transaction>,
+}
+
+impl Encodable for SignedBlock {
+    fn consensus_encode<W: std::io::Write + ?Sized>(
+        &self,
+        writer: &mut W,
+    ) -> Result<usize, std::io::Error> {
+        let mut len = 0;
+        len += self.version.consensus_encode(writer)?;
+        len += self.block_time.consensus_encode(writer)?;
+        len += self.block_height.consensus_encode(writer)?;
+        len += self.mined_block_index.consensus_encode(writer)?;
+        len += self.prev_block_hash.consensus_encode(writer)?;
+        len += self.merkle_root.consensus_encode(writer)?;
+        len += self.current_fee.consensus_encode(writer)?;
+        len += self.vtx.consensus_encode(writer)?;
+        Ok(len)
+    }
+}
+
+impl Decodable for SignedBlock {
+    fn consensus_decode_from_finite_reader<R: std::io::Read + ?Sized>(
+        reader: &mut R,
+    ) -> Result<Self, bitcoin::consensus::encode::Error> {
+        Ok(Self {
+            version: Decodable::consensus_decode_from_finite_reader(reader)?,
+            block_time: Decodable::consensus_decode_from_finite_reader(reader)?,
+            block_height: Decodable::consensus_decode_from_finite_reader(reader)?,
+            mined_block_index: Decodable::consensus_decode_from_finite_reader(reader)?,
+            prev_block_hash: Decodable::consensus_decode_from_finite_reader(reader)?,
+            merkle_root: Decodable::consensus_decode_from_finite_reader(reader)?,
+            current_fee: Decodable::consensus_decode_from_finite_reader(reader)?,
+            vtx: Decodable::consensus_decode_from_finite_reader(reader)?,
+        })
+    }
+}
+
+
 /// Bitcoin block version number.
 ///
 /// Originally used as a protocol version, but repurposed for soft-fork signaling.
