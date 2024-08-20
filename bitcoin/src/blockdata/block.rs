@@ -184,7 +184,7 @@ impl MerkleBranch {
 }
 
 
-#[derive(PartialEq, Eq, Clone, Debug, PartialOrd, Ord, Hash)]
+#[derive(Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(crate = "actual_serde"))]
 pub struct SignedBlock {
@@ -197,41 +197,52 @@ pub struct SignedBlock {
     pub current_fee: i64,
     pub vtx: Vec<Transaction>,
 }
+impl_consensus_encoding!(SignedBlock, version, block_time, block_height, mined_block_index, prev_block_hash, merkle_root, current_fee, vtx);
 
-impl Encodable for SignedBlock {
-    fn consensus_encode<W: std::io::Write + ?Sized>(
-        &self,
-        writer: &mut W,
-    ) -> Result<usize, std::io::Error> {
-        let mut len = 0;
-        len += self.version.consensus_encode(writer)?;
-        len += self.block_time.consensus_encode(writer)?;
-        len += self.block_height.consensus_encode(writer)?;
-        len += self.mined_block_index.consensus_encode(writer)?;
-        len += self.prev_block_hash.consensus_encode(writer)?;
-        len += self.merkle_root.consensus_encode(writer)?;
-        len += self.current_fee.consensus_encode(writer)?;
-        len += self.vtx.consensus_encode(writer)?;
-        Ok(len)
-    }
+impl SignedBlock {
+
+    pub fn block_hash(&self) -> BlockHash {
+        let mut engine = BlockHash::engine();
+        self.consensus_encode(&mut engine).expect("engines don't error");
+        BlockHash::from_engine(engine)
+    }    
 }
 
-impl Decodable for SignedBlock {
-    fn consensus_decode_from_finite_reader<R: std::io::Read + ?Sized>(
-        reader: &mut R,
-    ) -> Result<Self, encode::Error> {
-        Ok(Self {
-            version: Decodable::consensus_decode_from_finite_reader(reader)?,
-            block_time: Decodable::consensus_decode_from_finite_reader(reader)?,
-            block_height: Decodable::consensus_decode_from_finite_reader(reader)?,
-            mined_block_index: Decodable::consensus_decode_from_finite_reader(reader)?,
-            prev_block_hash: Decodable::consensus_decode_from_finite_reader(reader)?,
-            merkle_root: Decodable::consensus_decode_from_finite_reader(reader)?,
-            current_fee: Decodable::consensus_decode_from_finite_reader(reader)?,
-            vtx: Decodable::consensus_decode_from_finite_reader(reader)?,
-        })
-    }
-}
+
+// impl Encodable for SignedBlock {
+//     fn consensus_encode<W: std::io::Write + ?Sized>(
+//         &self,
+//         writer: &mut W,
+//     ) -> Result<usize, std::io::Error> {
+//         let mut len = 0;
+//         len += self.version.consensus_encode(writer)?;
+//         len += self.block_time.consensus_encode(writer)?;
+//         len += self.block_height.consensus_encode(writer)?;
+//         len += self.mined_block_index.consensus_encode(writer)?;
+//         len += self.prev_block_hash.consensus_encode(writer)?;
+//         len += self.merkle_root.consensus_encode(writer)?;
+//         len += self.current_fee.consensus_encode(writer)?;
+//         len += self.vtx.consensus_encode(writer)?;
+//         Ok(len)
+//     }
+// }
+
+// impl Decodable for SignedBlock {
+//     fn consensus_decode_from_finite_reader<R: std::io::Read + ?Sized>(
+//         reader: &mut R,
+//     ) -> Result<Self, encode::Error> {
+//         Ok(Self {
+//             version: Decodable::consensus_decode_from_finite_reader(reader)?,
+//             block_time: Decodable::consensus_decode_from_finite_reader(reader)?,
+//             block_height: Decodable::consensus_decode_from_finite_reader(reader)?,
+//             mined_block_index: Decodable::consensus_decode_from_finite_reader(reader)?,
+//             prev_block_hash: Decodable::consensus_decode_from_finite_reader(reader)?,
+//             merkle_root: Decodable::consensus_decode_from_finite_reader(reader)?,
+//             current_fee: Decodable::consensus_decode_from_finite_reader(reader)?,
+//             vtx: Decodable::consensus_decode_from_finite_reader(reader)?,
+//         })
+//     }
+// }
 
 
 /// Bitcoin block version number.
