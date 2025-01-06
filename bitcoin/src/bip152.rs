@@ -413,11 +413,18 @@ mod test {
         transaction, Amount, BlockChecked, CompactTarget, OutPoint, ScriptBuf, Sequence, TxIn,
         TxOut, Txid, Witness,
     };
+    use crate::blockdata::transaction::TxidExt;
 
     fn dummy_tx(nonce: &[u8]) -> Transaction {
         let dummy_txid = Txid::from_byte_array(hashes::sha256::Hash::hash(nonce).to_byte_array());
         Transaction {
             version: transaction::Version::ONE,
+            assettype: 0,
+            precision: 0,
+            headline: "".to_string(),
+            ticker: "".to_string(),
+            payload: Txid::all_zeros(),
+            payloaddata: "".to_string(),
             lock_time: absolute::LockTime::from_consensus(2),
             input: vec![TxIn {
                 previous_output: OutPoint::new(dummy_txid, 0),

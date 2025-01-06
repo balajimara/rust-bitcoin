@@ -14,9 +14,10 @@ use crate::locktime::absolute;
 use crate::network::{Network, Params};
 use crate::opcodes::all::*;
 use crate::pow::CompactTarget;
-use crate::transaction::{self, OutPoint, Transaction, TxIn, TxOut};
+use crate::transaction::{self, OutPoint, Transaction, TxIn, TxOut, Txid};
 use crate::witness::Witness;
 use crate::{script, Amount, BlockHash, Sequence, TestnetVersion};
+use crate::blockdata::transaction::TxidExt;
 
 /// How many seconds between blocks we expect on average.
 pub const TARGET_BLOCK_SPACING: u32 = 600;
@@ -78,6 +79,12 @@ fn bitcoin_genesis_tx(params: &Params) -> Transaction {
     // Base
     let mut ret = Transaction {
         version: transaction::Version::ONE,
+        assettype: 0,
+        precision: 0,
+        headline: "".to_string(),
+        ticker: "".to_string(),
+        payload: Txid::all_zeros(),
+        payloaddata: "".to_string(),
         lock_time: absolute::LockTime::ZERO,
         input: vec![],
         output: vec![],

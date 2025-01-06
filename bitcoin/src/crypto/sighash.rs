@@ -25,7 +25,8 @@ use crate::prelude::{Borrow, BorrowMut, String, ToOwned, Vec};
 use crate::taproot::{LeafVersion, TapLeafHash, TapLeafTag, TAPROOT_ANNEX_PREFIX};
 use crate::transaction::TransactionExt as _;
 use crate::witness::Witness;
-use crate::{transaction, Amount, Script, ScriptBuf, Sequence, Transaction, TxIn, TxOut};
+use crate::{transaction, Amount, Script, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid};
+use crate::blockdata::transaction::TxidExt;
 
 /// Used for signature hash for invalid use of SIGHASH_SINGLE.
 #[rustfmt::skip]
@@ -962,6 +963,12 @@ impl<R: Borrow<Transaction>> SighashCache<R> {
             // Build tx to sign
             let mut tx = Transaction {
                 version: self_.version,
+                assettype: 0,
+                precision: 0,
+                headline: "".to_string(),
+                ticker: "".to_string(),
+                payload: Txid::all_zeros(),
+                payloaddata: "".to_string(),
                 lock_time: self_.lock_time,
                 input: vec![],
                 output: vec![],
@@ -1529,6 +1536,12 @@ mod tests {
         // We need a tx with more inputs than outputs.
         let tx = Transaction {
             version: transaction::Version::ONE,
+            assettype: 0,
+            precision: 0,
+            headline: "".to_string(),
+            ticker: "".to_string(),
+            payload: Txid::all_zeros(),
+            payloaddata: "".to_string(),
             lock_time: absolute::LockTime::ZERO,
             input: vec![TxIn::EMPTY_COINBASE, TxIn::EMPTY_COINBASE],
             output: vec![TxOut::NULL],
@@ -1719,6 +1732,12 @@ mod tests {
 
         let dumb_tx = Transaction {
             version: transaction::Version::TWO,
+            assettype: 0,
+            precision: 0,
+            headline: "".to_string(),
+            ticker: "".to_string(),
+            payload: Txid::all_zeros(),
+            payloaddata: "".to_string(),
             lock_time: absolute::LockTime::ZERO,
             input: vec![TxIn::EMPTY_COINBASE],
             output: vec![],

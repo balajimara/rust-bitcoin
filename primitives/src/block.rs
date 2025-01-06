@@ -219,6 +219,41 @@ impl From<&Header> for BlockHash {
     fn from(header: &Header) -> BlockHash { header.block_hash() }
 }
 
+/// Signed block header.
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct SignedBlockHeader {
+    /// signed Block version, now repurposed for soft fork signalling.
+    pub version: i32,
+    /// signed Block time base on epoch
+    pub block_time: u32,
+    /// signed Block height
+    pub block_height: u64,
+    /// mined Block height to reference signature
+    pub mined_block_index: u64,
+    /// previous signed block hash
+    pub prev_block_hash: BlockHash,
+    /// signed block transaction merkle root
+    pub merkle_root: TxMerkleNode,
+    /// signed block fee
+    pub current_fee: i64,
+}
+
+impl SignedBlockHeader {
+    /// signed Block hash from header
+    pub fn block_hash(&self) -> BlockHash {
+        let mut engine = sha256d::Hash::engine();
+        engine.input(&self.version.to_le_bytes());
+        engine.input(&self.block_time.to_le_bytes());
+        engine.input(&self.block_height.to_le_bytes());
+        engine.input(&self.mined_block_index.to_le_bytes());
+        engine.input(self.prev_block_hash.as_byte_array());
+        engine.input(self.merkle_root.as_byte_array());
+        engine.input(&self.current_fee.to_le_bytes());
+        BlockHash::from_byte_array(sha256d::Hash::from_engine(engine).to_byte_array())
+    }    
+}
+
 /// Bitcoin block version number.
 ///
 /// Originally used as a protocol version, but repurposed for soft-fork signaling.

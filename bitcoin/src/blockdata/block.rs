@@ -26,13 +26,15 @@ use crate::transaction::{Transaction, TransactionExt as _, Wtxid};
 
 #[rustfmt::skip]                // Keep public re-exports separate.
 #[doc(inline)]
-pub use primitives::block::{Block, Checked, Unchecked, Validation, Version, BlockHash, Header, WitnessCommitment};
+pub use primitives::block::{Block, Checked, Unchecked, Validation, Version, BlockHash, Header, SignedBlockHeader, WitnessCommitment};
 #[doc(inline)]
 pub use units::block::{BlockHeight, BlockInterval, TooBigForRelativeBlockHeightError};
 
 impl_hashencode!(BlockHash);
 
 impl_consensus_encoding!(Header, version, prev_blockhash, merkle_root, time, bits, nonce);
+impl_consensus_encoding!(SignedBlockHeader, version, block_time, block_height, mined_block_index, prev_block_hash, merkle_root, current_fee);
+
 
 crate::internal_macros::define_extension_trait! {
     /// Extension functionality for the [`Header`] type.

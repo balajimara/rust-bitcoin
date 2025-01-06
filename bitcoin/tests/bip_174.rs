@@ -12,8 +12,9 @@ use bitcoin::script::{PushBytes, ScriptBufExt as _};
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{
     absolute, script, transaction, Amount, Denomination, NetworkKind, OutPoint, PrivateKey,
-    PublicKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+    PublicKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, Txid
 };
+use bitcoin::blockdata::transaction::TxidExt;
 
 #[track_caller]
 fn hex_psbt(s: &str) -> Psbt {
@@ -156,6 +157,12 @@ fn create_transaction() -> Transaction {
 
     Transaction {
         version: transaction::Version::TWO,
+        assettype: 0,
+        precision: 0,
+        headline: "".to_string(),
+        ticker: "".to_string(),
+        payload: Txid::all_zeros(),
+        payloaddata: "".to_string(),
         lock_time: absolute::LockTime::ZERO,
         input: vec![
             TxIn {

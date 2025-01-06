@@ -11,8 +11,9 @@ use bitcoin::taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo};
 use bitcoin::transaction::Version;
 use bitcoin::{
     absolute, script, Address, Network, OutPoint, PrivateKey, Psbt, ScriptBuf, Sequence,
-    Transaction, TxIn, TxOut, Witness,
+    Transaction, TxIn, TxOut, Witness, Txid
 };
+use bitcoin::blockdata::transaction::TxidExt;
 use secp256k1::{Keypair, Secp256k1, Signing, XOnlyPublicKey};
 use units::Amount;
 
@@ -212,6 +213,12 @@ fn create_psbt_for_taproot_key_path_spend(
 
     let transaction = Transaction {
         version: Version(2),
+        assettype: 0,
+        precision: 0,
+        headline: "".to_string(),
+        ticker: "".to_string(),
+        payload: Txid::all_zeros(),
+        payloaddata: "".to_string(),
         lock_time: absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint { txid: prev_tx_id.parse().unwrap(), vout: 0 },
@@ -289,6 +296,12 @@ fn create_psbt_for_taproot_script_path_spend(
     let prev_tx_id = "9d7c6770fca57285babab60c51834cfcfd10ad302119cae842d7216b4ac9a376";
     let transaction = Transaction {
         version: Version(2),
+        assettype: 0,
+        precision: 0,
+        headline: "".to_string(),
+        ticker: "".to_string(),
+        payload: Txid::all_zeros(),
+        payloaddata: "".to_string(),
         lock_time: absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint { txid: prev_tx_id.parse().unwrap(), vout: 0 },

@@ -96,6 +96,12 @@ impl Psbt {
                                     // properly.
                                     tx = Some(Transaction {
                                         version: Decodable::consensus_decode(&mut decoder)?,
+                                        assettype: Decodable::consensus_decode(&mut decoder)?,
+                                        precision: Decodable::consensus_decode(&mut decoder)?,
+                                        headline: Decodable::consensus_decode(&mut decoder)?,
+                                        ticker: Decodable::consensus_decode(&mut decoder)?,
+                                        payload: Decodable::consensus_decode(&mut decoder)?,
+                                        payloaddata: Decodable::consensus_decode(&mut decoder)?,
                                         input: Decodable::consensus_decode(&mut decoder)?,
                                         output: Decodable::consensus_decode(&mut decoder)?,
                                         lock_time: Decodable::consensus_decode(&mut decoder)?,

@@ -1221,7 +1221,8 @@ mod tests {
     use crate::network::NetworkKind;
     use crate::psbt::serialize::{Deserialize, Serialize};
     use crate::script::{ScriptBuf, ScriptBufExt as _};
-    use crate::transaction::{self, OutPoint, TxIn};
+    use crate::transaction::{self, OutPoint, TxIn, Txid};
+    use crate::blockdata::transaction::TxidExt;
     use crate::witness::Witness;
     use crate::Sequence;
 
@@ -1239,6 +1240,12 @@ mod tests {
         Psbt {
             unsigned_tx: Transaction {
                 version: transaction::Version::TWO,
+                assettype: 0,
+                precision: 0,
+                headline: "".to_string(),
+                ticker: "".to_string(),
+                payload: Txid::all_zeros(),
+                payloaddata: "".to_string(),
                 lock_time: absolute::LockTime::ZERO,
                 input: vec![TxIn {
                     previous_output: OutPoint {
@@ -1283,6 +1290,12 @@ mod tests {
         let psbt = Psbt {
             unsigned_tx: Transaction {
                 version: transaction::Version::TWO,
+                assettype: 0,
+                precision: 0,
+                headline: "".to_string(),
+                ticker: "".to_string(),
+                payload: Txid::all_zeros(),
+                payloaddata: "".to_string(),
                 lock_time: absolute::LockTime::ZERO,
                 input: vec![],
                 output: vec![],
@@ -1399,6 +1412,12 @@ mod tests {
         let expected = Psbt {
             unsigned_tx: Transaction {
                 version: transaction::Version::TWO,
+                assettype: 0,
+                precision: 0,
+                headline: "".to_string(),
+                ticker: "".to_string(),
+                payload: Txid::all_zeros(),
+                payloaddata: "".to_string(),
                 lock_time: absolute::LockTime::from_consensus(1257139),
                 input: vec![TxIn {
                     previous_output: OutPoint {
@@ -1470,6 +1489,12 @@ mod tests {
         // create some values to use in the PSBT
         let tx = Transaction {
             version: transaction::Version::ONE,
+            assettype: 0,
+            precision: 0,
+            headline: "".to_string(),
+            ticker: "".to_string(),
+            payload: Txid::all_zeros(),
+            payloaddata: "".to_string(),
             lock_time: absolute::LockTime::ZERO,
             input: vec![TxIn {
                 previous_output: OutPoint {
@@ -1648,6 +1673,12 @@ mod tests {
             let unserialized = Psbt {
                 unsigned_tx: Transaction {
                     version: transaction::Version::TWO,
+                    assettype: 0,
+                    precision: 0,
+                    headline: "".to_string(),
+                    ticker: "".to_string(),
+                    payload: Txid::all_zeros(),
+                    payloaddata: "".to_string(),
                     lock_time: absolute::LockTime::from_consensus(1257139),
                     input: vec![
                         TxIn {
@@ -1680,6 +1711,12 @@ mod tests {
                     Input {
                         non_witness_utxo: Some(Transaction {
                             version: transaction::Version::ONE,
+                            assettype: 0,
+                            precision: 0,
+                            headline: "".to_string(),
+                            ticker: "".to_string(),
+                            payload: Txid::all_zeros(),
+                            payloaddata: "".to_string(),
                             lock_time: absolute::LockTime::ZERO,
                             input: vec![
                                 TxIn {
@@ -1981,6 +2018,12 @@ mod tests {
         let mut unserialized = Psbt {
             unsigned_tx: Transaction {
                 version: transaction::Version::TWO,
+                assettype: 0,
+                precision: 0,
+                headline: "".to_string(),
+                ticker: "".to_string(),
+                payload: Txid::all_zeros(),
+                payloaddata: "".to_string(),
                 lock_time: absolute::LockTime::from_consensus(1257139),
                 input: vec![
                     TxIn {
@@ -2013,6 +2056,12 @@ mod tests {
                 Input {
                     non_witness_utxo: Some(Transaction {
                         version: transaction::Version::ONE,
+                        assettype: 0,
+                        precision: 0,
+                        headline: "".to_string(),
+                        ticker: "".to_string(),
+                        payload: Txid::all_zeros(),
+                        payloaddata: "".to_string(),
                         lock_time: absolute::LockTime::ZERO,
                         input: vec![
                             TxIn {
@@ -2162,6 +2211,12 @@ mod tests {
         let t = Psbt {
             unsigned_tx: Transaction {
                 version: transaction::Version::TWO,
+                assettype: 0,
+                precision: 0,
+                headline: "".to_string(),
+                ticker: "".to_string(),
+                payload: Txid::all_zeros(),
+                payloaddata: "".to_string(),
                 lock_time: absolute::LockTime::from_consensus(1257139),
                 input: vec![
                     TxIn {
@@ -2193,6 +2248,12 @@ mod tests {
                 Input {
                     non_witness_utxo: Some(Transaction {
                         version: transaction::Version::ONE,
+                        assettype: 0,
+                        precision: 0,
+                        headline: "".to_string(),
+                        ticker: "".to_string(),
+                        payload: Txid::all_zeros(),
+                        payloaddata: "".to_string(),
                         lock_time: absolute::LockTime::ZERO,
                         input: vec![
                             TxIn {

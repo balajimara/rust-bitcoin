@@ -40,6 +40,7 @@ use bitcoin::{
     ecdsa, transaction, Address, Amount, Block, NetworkKind, OutPoint, PrivateKey, PublicKey,
     ScriptBuf, Sequence, Target, Transaction, TxIn, TxOut, Txid, Work,
 };
+use bitcoin::blockdata::transaction::TxidExt;
 
 /// Implicitly does regression test for `BlockHeader` also.
 #[test]
@@ -221,6 +222,12 @@ fn serde_regression_public_key() {
 fn serde_regression_psbt() {
     let tx = Transaction {
         version: transaction::Version::ONE,
+        assettype: 0,
+        precision: 0,
+        headline: "".to_string(),
+        ticker: "".to_string(),
+        payload: Txid::all_zeros(),
+        payloaddata: "".to_string(),
         lock_time: absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint {

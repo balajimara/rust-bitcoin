@@ -885,7 +885,7 @@ impl FromStr for Address<NetworkUnchecked> {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Address<NetworkUnchecked>, ParseError> {
-        if ["bc1", "bcrt1", "tb1"].iter().any(|&prefix| s.to_lowercase().starts_with(prefix)) {
+        if ["cc1", "ccrt1", "tc1"].iter().any(|&prefix| s.to_lowercase().starts_with(prefix)) {
             Ok(Address::from_bech32_str(s)?)
         } else if ["1", "2", "3", "m", "n"].iter().any(|&prefix| s.starts_with(prefix)) {
             Ok(Address::from_base58_str(s)?)
@@ -1180,14 +1180,14 @@ mod tests {
             .unwrap()
         );
 
-        let addr = "bcrt1q2nfxmhd4n3c8834pj72xagvyr9gl57n5r94fsl"
+        let addr = "ccrt1q2nfxmhd4n3c8834pj72xagvyr9gl57n5r94fsl"
             .parse::<Address<_>>()
             .unwrap()
             .assume_checked();
         let json = serde_json::to_value(&addr).unwrap();
         assert_eq!(
             json,
-            serde_json::Value::String("bcrt1q2nfxmhd4n3c8834pj72xagvyr9gl57n5r94fsl".to_owned())
+            serde_json::Value::String("ccrt1q2nfxmhd4n3c8834pj72xagvyr9gl57n5r94fsl".to_owned())
         );
         let into: Address = serde_json::from_value::<Address<_>>(json).unwrap().assume_checked();
         assert_eq!(addr.to_string(), into.to_string());
@@ -1211,8 +1211,8 @@ mod tests {
         }
 
         for el in [
-            "bcrt1q2nfxmhd4n3c8834pj72xagvyr9gl57n5r94fsl",
-            "bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej",
+            "ccrt1q2nfxmhd4n3c8834pj72xagvyr9gl57n5r94fsl",
+            "csc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej",
         ]
         .iter()
         {

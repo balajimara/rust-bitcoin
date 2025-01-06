@@ -95,6 +95,18 @@ use crate::witness::Witness;
 pub struct Transaction {
     /// The protocol version, is currently expected to be 1, 2 (BIP 68) or 3 (BIP 431).
     pub version: Version,
+    /// Asset type 
+    pub assettype: i32,
+    /// Asset Precision
+    pub precision: i32,
+    /// Asset Symbol 
+    pub ticker: String,
+    /// Asset name 
+    pub headline: String,
+    /// Asset hash for data 
+    pub payload: Txid,
+     /// Asset data 
+     pub payloaddata: String,
     /// Block height or timestamp. Transaction cannot be included in a block until this height/time.
     ///
     /// ### Relevant BIPs
@@ -134,6 +146,12 @@ impl Transaction {
     pub fn compute_ntxid(&self) -> sha256d::Hash {
         let cloned_tx = Transaction {
             version: self.version,
+            assettype: self.assettype,
+            precision: self.precision,
+            ticker: self.ticker.to_string(),
+            headline: self.headline.to_string(),
+            payload: self.payload,
+            payloaddata: "".to_string(),
             lock_time: self.lock_time,
             input: self
                 .input
@@ -156,7 +174,9 @@ impl Transaction {
     /// this will be equal to [`Transaction::compute_wtxid()`].
     #[doc(alias = "txid")]
     pub fn compute_txid(&self) -> Txid {
-        let hash = hash_transaction(self, false);
+        let mut tx_clone = self.clone();
+        tx_clone.payloaddata = "".to_string();
+        let hash = hash_transaction(&tx_clone, false);
         Txid::from_byte_array(hash.to_byte_array())
     }
 
@@ -234,6 +254,15 @@ fn hash_transaction(tx: &Transaction, uses_segwit_serialization: bool) -> sha256
 
     let mut enc = sha256d::Hash::engine();
     enc.input(&tx.version.0.to_le_bytes()); // Same as `encode::emit_i32`.
+
+    if tx.version.0 == 10 {
+        enc.input(&tx.assettype.to_le_bytes());
+        enc.input(&tx.precision.to_le_bytes());
+        enc.input(&tx.headline.as_bytes());
+        enc.input(&tx.ticker.as_bytes());
+        enc.input(tx.payload.as_byte_array());
+        enc.input(&tx.payloaddata.as_bytes());
+    }
 
     if uses_segwit_serialization {
         // BIP-141 (SegWit) transaction serialization also includes marker and flag.

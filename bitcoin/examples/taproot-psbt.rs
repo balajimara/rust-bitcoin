@@ -100,10 +100,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nSTART EXAMPLE 1 - P2TR with a BIP86 commitment, signed with internal key\n");
 
     // Just some addresses for outputs from our wallets. Not really important.
-    let to_address = "bcrt1p0p3rvwww0v9znrclp00uneq8ytre9kj922v8fxhnezm3mgsmn9usdxaefc"
+    let to_address = "ccrt1p0p3rvwww0v9znrclp00uneq8ytre9kj922v8fxhnezm3mgsmn9usdxaefc"
         .parse::<Address<_>>()?
         .require_network(Network::Regtest)?;
-    let change_address = "bcrt1pz449kexzydh2kaypatup5ultru3ej284t6eguhnkn6wkhswt0l7q3a7j76"
+    let change_address = "ccrt1pz449kexzydh2kaypatup5ultru3ej284t6eguhnkn6wkhswt0l7q3a7j76"
         .parse::<Address<_>>()?
         .require_network(Network::Regtest)?;
     let amount_to_send_in_sats = Amount::ONE_BTC;
@@ -232,6 +232,12 @@ fn generate_bip86_key_spend_tx(
     // CREATOR + UPDATER
     let tx1 = Transaction {
         version: transaction::Version::TWO,
+        assettype: 0,
+        precision: 0,
+        headline: "".to_string(),
+        ticker: "".to_string(),
+        payload: Txid::all_zeros(),
+        payloaddata: "".to_string(),
         lock_time: absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint { txid: input_utxo.txid.parse()?, vout: input_utxo.vout },
@@ -425,6 +431,12 @@ impl BenefactorWallet {
         // CREATOR + UPDATER
         let next_tx = Transaction {
             version: transaction::Version::TWO,
+            assettype: 0,
+            precision: 0,
+            headline: "".to_string(),
+            ticker: "".to_string(),
+            payload: Txid::all_zeros(),
+            payloaddata: "".to_string(),
             lock_time,
             input: vec![TxIn {
                 previous_output: OutPoint { txid: tx.compute_txid(), vout: 0 },
@@ -573,6 +585,12 @@ impl BenefactorWallet {
 
             let next_tx = Transaction {
                 version: transaction::Version::TWO,
+                assettype: 0,
+                precision: 0,
+                headline: "".to_string(),
+                ticker: "".to_string(),
+                payload: Txid::all_zeros(),
+                payloaddata: "".to_string(),
                 lock_time,
                 input: vec![TxIn {
                     previous_output: OutPoint { txid: tx.compute_txid(), vout: 0 },
