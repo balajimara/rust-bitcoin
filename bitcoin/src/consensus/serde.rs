@@ -12,13 +12,13 @@
 use core::fmt;
 use core::marker::PhantomData;
 
-use io::Write;
 use serde::de::{SeqAccess, Unexpected, Visitor};
 use serde::ser::SerializeSeq;
 use serde::{Deserializer, Serializer};
 
-use super::{Decodable, Encodable, ParseError};
-use crate::consensus::{DecodeError, IterReader};
+use super::encode::Error as ConsensusError;
+use super::{Decodable, Encodable};
+use crate::io;
 
 /// Hex-encoding strategy
 pub struct Hex<Case = hex::Lower>(PhantomData<Case>)
@@ -66,16 +66,16 @@ pub mod hex {
         }
     }
 
-    // We just guessed at a reasonably sane value.
+    // TODO measure various sizes and determine the best value
     const HEX_BUF_SIZE: usize = 512;
 
     /// Hex byte encoder.
     // We wrap `BufEncoder` to not leak internal representation.
-    pub struct Encoder<C: Case>(BufEncoder<{ HEX_BUF_SIZE }>, PhantomData<C>);
+    pub struct Encoder<C: Case>(BufEncoder<[u8; HEX_BUF_SIZE]>, PhantomData<C>);
 
     impl<C: Case> From<super::Hex<C>> for Encoder<C> {
         fn from(_: super::Hex<C>) -> Self {
-            Encoder(BufEncoder::new(C::INTERNAL_CASE), Default::default())
+            Encoder(BufEncoder::new([0; HEX_BUF_SIZE]), Default::default())
         }
     }
 
@@ -85,7 +85,7 @@ pub mod hex {
                 if self.0.is_full() {
                     self.flush(writer)?;
                 }
-                bytes = self.0.put_bytes_min(bytes);
+                bytes = self.0.put_bytes_min(bytes, C::INTERNAL_CASE);
             }
             Ok(())
         }
@@ -98,17 +98,18 @@ pub mod hex {
     }
 
     // Newtypes to hide internal details.
+    // TODO: statically prove impossible cases
 
     /// Error returned when a hex string decoder can't be created.
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct DecodeInitError(hex::OddLengthStringError);
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct DecodeInitError(hex::HexToBytesError);
 
     /// Error returned when a hex string contains invalid characters.
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct DecodeError(hex::InvalidCharError);
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct DecodeError(hex::HexToBytesError);
 
     /// Hex decoder state.
-    pub struct Decoder<'a>(hex::HexSliceToBytesIter<'a>);
+    pub struct Decoder<'a>(hex::HexToBytesIter<'a>);
 
     impl<'a> Decoder<'a> {
         fn new(s: &'a str) -> Result<Self, DecodeInitError> {
@@ -119,7 +120,7 @@ pub mod hex {
         }
     }
 
-    impl Iterator for Decoder<'_> {
+    impl<'a> Iterator for Decoder<'a> {
         type Item = Result<u8, DecodeError>;
 
         fn next(&mut self) -> Option<Self::Item> {
@@ -137,19 +138,29 @@ pub mod hex {
 
     impl super::IntoDeError for DecodeInitError {
         fn into_de_error<E: serde::de::Error>(self) -> E {
-            E::invalid_length(self.0.length(), &"an even number of ASCII-encoded hex digits")
+            use hex::HexToBytesError;
+
+            match self.0 {
+                HexToBytesError::OddLengthString(len) =>
+                    E::invalid_length(len, &"an even number of ASCII-encoded hex digits"),
+                error => panic!("unexpected error: {:?}", error),
+            }
         }
     }
 
     impl super::IntoDeError for DecodeError {
         fn into_de_error<E: serde::de::Error>(self) -> E {
+            use hex::HexToBytesError;
             use serde::de::Unexpected;
 
             const EXPECTED_CHAR: &str = "an ASCII-encoded hex digit";
 
-            match self.0.invalid_char() {
-                c if c.is_ascii() => E::invalid_value(Unexpected::Char(c as _), &EXPECTED_CHAR),
-                c => E::invalid_value(Unexpected::Unsigned(c.into()), &EXPECTED_CHAR),
+            match self.0 {
+                HexToBytesError::InvalidChar(c) if c.is_ascii() =>
+                    E::invalid_value(Unexpected::Char(c as _), &EXPECTED_CHAR),
+                HexToBytesError::InvalidChar(c) =>
+                    E::invalid_value(Unexpected::Unsigned(c.into()), &EXPECTED_CHAR),
+                error => panic!("unexpected error: {:?}", error),
             }
         }
     }
@@ -163,8 +174,10 @@ impl<'a, T: 'a + Encodable, E: ByteEncoder> fmt::Display for DisplayWrapper<'a, 
         self.0.consensus_encode(&mut writer).map_err(|error| {
             #[cfg(debug_assertions)]
             {
+                use crate::StdError;
+
                 if error.kind() != io::ErrorKind::Other
-                    || error.get_ref().is_some()
+                    || error.source().is_some()
                     || !writer.writer.was_error
                 {
                     panic!(
@@ -174,8 +187,6 @@ impl<'a, T: 'a + Encodable, E: ByteEncoder> fmt::Display for DisplayWrapper<'a, 
                     );
                 }
             }
-            #[cfg(not(debug_assertions))]
-            let _ = error;
             fmt::Error
         })?;
         let result = writer.actually_flush();
@@ -209,8 +220,6 @@ impl<W: fmt::Write> ErrorTrackingWriter<W> {
                 panic!("`{}` called on errored writer", fun);
             }
         }
-        #[cfg(not(debug_assertions))]
-        let _ = fun;
     }
 
     fn assert_was_error<Offender>(&self) {
@@ -227,8 +236,6 @@ impl<W: fmt::Write> ErrorTrackingWriter<W> {
         {
             self.was_error |= was;
         }
-        #[cfg(not(debug_assertions))]
-        let _ = was;
     }
 
     fn check_err<T, E>(&mut self, result: Result<T, E>) -> Result<T, E> {
@@ -264,7 +271,7 @@ impl<'a, W: fmt::Write, E: EncodeBytes> IoWrapper<'a, W, E> {
     fn actually_flush(&mut self) -> fmt::Result { self.encoder.flush(&mut self.writer) }
 }
 
-impl<W: fmt::Write, E: EncodeBytes> Write for IoWrapper<'_, W, E> {
+impl<'a, W: fmt::Write, E: EncodeBytes> io::Write for IoWrapper<'a, W, E> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         match self.encoder.encode_chunk(&mut self.writer, bytes) {
             Ok(()) => Ok(bytes.len()),
@@ -319,7 +326,7 @@ pub trait ByteDecoder<'a> {
     /// The decoder state.
     type Decoder: Iterator<Item = Result<u8, Self::DecodeError>>;
 
-    /// Constructs a new decoder from string.
+    /// Constructs the decoder from string.
     fn from_str(s: &'a str) -> Result<Self::Decoder, Self::InitError>;
 }
 
@@ -334,7 +341,7 @@ struct BinWriter<S: SerializeSeq> {
     error: Option<S::Error>,
 }
 
-impl<S: SerializeSeq> Write for BinWriter<S> {
+impl<S: SerializeSeq> io::Write for BinWriter<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> { self.write_all(buf).map(|_| buf.len()) }
 
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
@@ -358,25 +365,31 @@ impl<D: fmt::Display> serde::de::Expected for DisplayExpected<D> {
     }
 }
 
+enum DecodeError<E> {
+    TooManyBytes,
+    Consensus(ConsensusError),
+    Other(E),
+}
+
 // not a trait impl because we panic on some variants
-fn consensus_error_into_serde<E: serde::de::Error>(error: ParseError) -> E {
+fn consensus_error_into_serde<E: serde::de::Error>(error: ConsensusError) -> E {
     match error {
-        ParseError::MissingData => E::custom("missing data (early end of file or slice too short)"),
-        ParseError::OversizedVectorAllocation { requested, max } => E::custom(format_args!(
+        ConsensusError::Io(error) => panic!("unexpected IO error {:?}", error),
+        ConsensusError::OversizedVectorAllocation { requested, max } => E::custom(format_args!(
             "the requested allocation of {} items exceeds maximum of {}",
             requested, max
         )),
-        ParseError::InvalidChecksum { expected, actual } => E::invalid_value(
+        ConsensusError::InvalidChecksum { expected, actual } => E::invalid_value(
             Unexpected::Bytes(&actual),
             &DisplayExpected(format_args!(
                 "checksum {:02x}{:02x}{:02x}{:02x}",
                 expected[0], expected[1], expected[2], expected[3]
             )),
         ),
-        ParseError::NonMinimalVarInt =>
+        ConsensusError::NonMinimalVarInt =>
             E::custom(format_args!("compact size was not encoded minimally")),
-        ParseError::ParseFailed(msg) => E::custom(msg),
-        ParseError::UnsupportedSegwitFlag(flag) =>
+        ConsensusError::ParseFailed(msg) => E::custom(msg),
+        ConsensusError::UnsupportedSegwitFlag(flag) =>
             E::invalid_value(Unexpected::Unsigned(flag.into()), &"segwit version 1 flag"),
     }
 }
@@ -388,8 +401,8 @@ where
     fn unify(self) -> E {
         match self {
             DecodeError::Other(error) => error,
-            DecodeError::Unconsumed => E::custom(format_args!("got more bytes than expected")),
-            DecodeError::Parse(e) => consensus_error_into_serde(e),
+            DecodeError::TooManyBytes => E::custom(format_args!("got more bytes than expected")),
+            DecodeError::Consensus(error) => consensus_error_into_serde(error),
         }
     }
 }
@@ -401,9 +414,53 @@ where
     fn into_de_error<DE: serde::de::Error>(self) -> DE {
         match self {
             DecodeError::Other(error) => error.into_de_error(),
-            DecodeError::Unconsumed => DE::custom(format_args!("got more bytes than expected")),
-            DecodeError::Parse(e) => consensus_error_into_serde(e),
+            DecodeError::TooManyBytes => DE::custom(format_args!("got more bytes than expected")),
+            DecodeError::Consensus(error) => consensus_error_into_serde(error),
         }
+    }
+}
+
+struct IterReader<E: fmt::Debug, I: Iterator<Item = Result<u8, E>>> {
+    iterator: core::iter::Fuse<I>,
+    error: Option<E>,
+}
+
+impl<E: fmt::Debug, I: Iterator<Item = Result<u8, E>>> IterReader<E, I> {
+    fn new(iterator: I) -> Self { IterReader { iterator: iterator.fuse(), error: None } }
+
+    fn decode<T: Decodable>(mut self) -> Result<T, DecodeError<E>> {
+        use crate::StdError;
+
+        let result = T::consensus_decode(&mut self);
+        match (result, self.error) {
+            (Ok(_), None) if self.iterator.next().is_some() => {
+                Err(DecodeError::TooManyBytes)
+            },
+            (Ok(value), None) => Ok(value),
+            (Ok(_), Some(error)) => panic!("{} silently ate the error: {:?}", core::any::type_name::<T>(), error),
+            (Err(ConsensusError::Io(io_error)), Some(de_error)) if io_error.kind() == io::ErrorKind::Other && io_error.source().is_none() => Err(DecodeError::Other(de_error)),
+            (Err(consensus_error), None) => Err(DecodeError::Consensus(consensus_error)),
+            (Err(ConsensusError::Io(io_error)), de_error) => panic!("Unexpected IO error {:?} returned from {}::consensus_decode(), deserialization error: {:?}", io_error, core::any::type_name::<T>(), de_error),
+            (Err(consensus_error), Some(de_error)) => panic!("{} should've returned `Other` IO error because of deserialization error {:?} but it returned consensus error {:?} instead", core::any::type_name::<T>(), de_error, consensus_error),
+        }
+    }
+}
+
+impl<E: fmt::Debug, I: Iterator<Item = Result<u8, E>>> io::Read for IterReader<E, I> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut count = 0;
+        for (dst, src) in buf.iter_mut().zip(&mut self.iterator) {
+            match src {
+                Ok(byte) => *dst = byte,
+                Err(error) => {
+                    self.error = Some(error);
+                    return Err(io::ErrorKind::Other.into());
+                }
+            }
+            // bounded by the length of buf
+            count += 1;
+        }
+        Ok(count)
     }
 }
 
@@ -412,11 +469,12 @@ where
 /// To (de)serialize a field using consensus encoding you can write e.g.:
 ///
 /// ```
-/// # use serde::{Serialize, Deserialize};
 /// use bitcoin::Transaction;
 /// use bitcoin::consensus;
+/// use serde_derive::{Serialize, Deserialize};
 ///
 /// #[derive(Serialize, Deserialize)]
+/// # #[serde(crate = "actual_serde")]
 /// pub struct MyStruct {
 ///     #[serde(with = "consensus::serde::With::<consensus::serde::Hex>")]
 ///     tx: Transaction,
@@ -436,6 +494,8 @@ impl<E> With<E> {
         if serializer.is_human_readable() {
             serializer.collect_str(&DisplayWrapper::<'_, _, E>(value, Default::default()))
         } else {
+            use crate::StdError;
+
             let serializer = serializer.serialize_seq(None)?;
             let mut writer = BinWriter { serializer, error: None };
 
@@ -445,7 +505,7 @@ impl<E> With<E> {
                 (Ok(_), Some(error)) =>
                     panic!("{} silently ate an IO error: {:?}", core::any::type_name::<T>(), error),
                 (Err(io_error), Some(ser_error))
-                    if io_error.kind() == io::ErrorKind::Other && io_error.get_ref().is_none() =>
+                    if io_error.kind() == io::ErrorKind::Other && io_error.source().is_none() =>
                     Err(ser_error),
                 (Err(io_error), ser_error) => panic!(
                     "{} returned an unexpected IO error: {:?} serialization error: {:?}",
@@ -474,7 +534,7 @@ impl<E> With<E> {
 
 struct HRVisitor<T: Decodable, D: for<'a> ByteDecoder<'a>>(PhantomData<fn() -> (T, D)>);
 
-impl<T: Decodable, D: for<'a> ByteDecoder<'a>> Visitor<'_> for HRVisitor<T, D> {
+impl<'de, T: Decodable, D: for<'a> ByteDecoder<'a>> Visitor<'de> for HRVisitor<T, D> {
     type Value = T;
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {

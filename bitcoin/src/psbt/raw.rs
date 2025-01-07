@@ -4,36 +4,37 @@
 //!
 //! Raw PSBT key-value pairs as defined at
 //! <https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki>.
+//!
 
+use core::convert::TryFrom;
 use core::fmt;
-
-use internals::ToU64 as _;
-use io::{BufRead, Write};
 
 use super::serialize::{Deserialize, Serialize};
 use crate::consensus::encode::{
-    self, deserialize, serialize, Decodable, Encodable, ReadExt, WriteExt, MAX_VEC_SIZE,
+    self, deserialize, serialize, Decodable, Encodable, ReadExt, VarInt, WriteExt, MAX_VEC_SIZE,
 };
-use crate::prelude::{DisplayHex, Vec};
+use crate::io;
+use crate::prelude::*;
 use crate::psbt::Error;
 
 /// A PSBT key in its raw byte form.
-///
-/// `<key> := <keylen> <keytype> <keydata>`
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(crate = "actual_serde"))]
 pub struct Key {
     /// The type of this PSBT key.
-    pub type_value: u64, // Encoded as a compact size.
-    /// The key data itself in raw byte form.
+    pub type_value: u8,
+    /// The key itself in raw byte form.
+    /// `<key> := <keylen> <keytype> <keydata>`
     #[cfg_attr(feature = "serde", serde(with = "crate::serde_utils::hex_bytes"))]
-    pub key_data: Vec<u8>,
+    pub key: Vec<u8>,
 }
 
 /// A PSBT key-value pair in its raw byte form.
 /// `<keypair> := <key> <value>`
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(crate = "actual_serde"))]
 pub struct Pair {
     /// The key of this key-value pair.
     pub key: Key,
@@ -44,15 +45,16 @@ pub struct Pair {
 }
 
 /// Default implementation for proprietary key subtyping
-pub type ProprietaryType = u64;
+pub type ProprietaryType = u8;
 
 /// Proprietary keys (i.e. keys starting with 0xFC byte) with their internal
 /// structure according to BIP 174.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(crate = "actual_serde"))]
 pub struct ProprietaryKey<Subtype = ProprietaryType>
 where
-    Subtype: Copy + From<u64> + Into<u64>,
+    Subtype: Copy + From<u8> + Into<u8>,
 {
     /// Proprietary type prefix used for grouping together keys under some
     /// application and avoid namespace collision
@@ -67,13 +69,13 @@ where
 
 impl fmt::Display for Key {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "type: {:#x}, key: {:x}", self.type_value, self.key_data.as_hex())
+        write!(f, "type: {:#x}, key: {:x}", self.type_value, self.key.as_hex())
     }
 }
 
 impl Key {
-    pub(crate) fn decode<R: BufRead + ?Sized>(r: &mut R) -> Result<Self, Error> {
-        let byte_size = r.read_compact_size()?;
+    pub(crate) fn decode<R: io::Read + ?Sized>(r: &mut R) -> Result<Self, Error> {
+        let VarInt(byte_size): VarInt = Decodable::consensus_decode(r)?;
 
         if byte_size == 0 {
             return Err(Error::NoMorePairs);
@@ -81,33 +83,35 @@ impl Key {
 
         let key_byte_size: u64 = byte_size - 1;
 
-        if key_byte_size > MAX_VEC_SIZE.to_u64() {
-            return Err(encode::Error::Parse(encode::ParseError::OversizedVectorAllocation {
+        if key_byte_size > MAX_VEC_SIZE as u64 {
+            return Err(encode::Error::OversizedVectorAllocation {
                 requested: key_byte_size as usize,
                 max: MAX_VEC_SIZE,
-            })
+            }
             .into());
         }
 
-        let type_value = r.read_compact_size()?;
+        let type_value: u8 = Decodable::consensus_decode(r)?;
 
-        let mut key_data = Vec::with_capacity(key_byte_size as usize);
+        let mut key = Vec::with_capacity(key_byte_size as usize);
         for _ in 0..key_byte_size {
-            key_data.push(Decodable::consensus_decode(r)?);
+            key.push(Decodable::consensus_decode(r)?);
         }
 
-        Ok(Key { type_value, key_data })
+        Ok(Key { type_value, key })
     }
 }
 
 impl Serialize for Key {
     fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::new();
-        buf.emit_compact_size(self.key_data.len() + 1).expect("in-memory writers don't error");
+        VarInt::from(self.key.len() + 1)
+            .consensus_encode(&mut buf)
+            .expect("in-memory writers don't error");
 
-        buf.emit_compact_size(self.type_value).expect("in-memory writers don't error");
+        self.type_value.consensus_encode(&mut buf).expect("in-memory writers don't error");
 
-        for key in &self.key_data {
+        for key in &self.key {
             key.consensus_encode(&mut buf).expect("in-memory writers don't error");
         }
 
@@ -133,18 +137,18 @@ impl Deserialize for Pair {
 }
 
 impl Pair {
-    pub(crate) fn decode<R: BufRead + ?Sized>(r: &mut R) -> Result<Self, Error> {
+    pub(crate) fn decode<R: io::Read + ?Sized>(r: &mut R) -> Result<Self, Error> {
         Ok(Pair { key: Key::decode(r)?, value: Decodable::consensus_decode(r)? })
     }
 }
 
 impl<Subtype> Encodable for ProprietaryKey<Subtype>
 where
-    Subtype: Copy + From<u64> + Into<u64>,
+    Subtype: Copy + From<u8> + Into<u8>,
 {
-    fn consensus_encode<W: Write + ?Sized>(&self, w: &mut W) -> Result<usize, io::Error> {
-        let mut len = self.prefix.consensus_encode(w)?;
-        len += w.emit_compact_size(self.subtype.into())?;
+    fn consensus_encode<W: io::Write + ?Sized>(&self, w: &mut W) -> Result<usize, io::Error> {
+        let mut len = self.prefix.consensus_encode(w)? + 1;
+        w.emit_u8(self.subtype.into())?;
         w.write_all(&self.key)?;
         len += self.key.len();
         Ok(len)
@@ -153,16 +157,12 @@ where
 
 impl<Subtype> Decodable for ProprietaryKey<Subtype>
 where
-    Subtype: Copy + From<u64> + Into<u64>,
+    Subtype: Copy + From<u8> + Into<u8>,
 {
-    fn consensus_decode<R: BufRead + ?Sized>(r: &mut R) -> Result<Self, encode::Error> {
+    fn consensus_decode<R: io::Read + ?Sized>(r: &mut R) -> Result<Self, encode::Error> {
         let prefix = Vec::<u8>::consensus_decode(r)?;
-        let subtype = Subtype::from(r.read_compact_size()?);
-
-        // The limit is a DOS protection mechanism the exact value is not
-        // important, 1024 bytes is bigger than any key should be.
-        let mut key = vec![];
-        let _ = r.read_to_limit(&mut key, 1024)?;
+        let subtype = Subtype::from(r.read_u8()?);
+        let key = read_to_end(r)?;
 
         Ok(ProprietaryKey { prefix, subtype, key })
     }
@@ -170,28 +170,42 @@ where
 
 impl<Subtype> ProprietaryKey<Subtype>
 where
-    Subtype: Copy + From<u64> + Into<u64>,
+    Subtype: Copy + From<u8> + Into<u8>,
 {
-    /// Constructs a new full [Key] corresponding to this proprietary key type
-    pub fn to_key(&self) -> Key { Key { type_value: 0xFC, key_data: serialize(self) } }
+    /// Constructs full [Key] corresponding to this proprietary key type
+    pub fn to_key(&self) -> Key { Key { type_value: 0xFC, key: serialize(self) } }
 }
 
 impl<Subtype> TryFrom<Key> for ProprietaryKey<Subtype>
 where
-    Subtype: Copy + From<u64> + Into<u64>,
+    Subtype: Copy + From<u8> + Into<u8>,
 {
     type Error = Error;
 
-    /// Constructs a new [`ProprietaryKey`] from a [`Key`].
+    /// Constructs a [`ProprietaryKey`] from a [`Key`].
     ///
     /// # Errors
-    ///
     /// Returns [`Error::InvalidProprietaryKey`] if `key` does not start with `0xFC` byte.
     fn try_from(key: Key) -> Result<Self, Self::Error> {
         if key.type_value != 0xFC {
             return Err(Error::InvalidProprietaryKey);
         }
 
-        Ok(deserialize(&key.key_data)?)
+        Ok(deserialize(&key.key)?)
     }
+}
+
+// core2 doesn't have read_to_end
+pub(crate) fn read_to_end<D: io::Read>(mut d: D) -> Result<Vec<u8>, io::Error> {
+    let mut result = vec![];
+    let mut buf = [0u8; 64];
+    loop {
+        match d.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => result.extend_from_slice(&buf[0..n]),
+            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        };
+    }
+    Ok(result)
 }

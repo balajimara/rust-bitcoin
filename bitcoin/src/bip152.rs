@@ -1,25 +1,22 @@
 // SPDX-License-Identifier: CC0-1.0
 
-//! BIP152 Compact Blocks.
+//! BIP152 Compact Blocks
 //!
 //! Implementation of compact blocks data structure and algorithms.
+//!
 
+use core::convert::{TryFrom, TryInto};
 use core::{convert, fmt, mem};
-use core::convert::Infallible;
 #[cfg(feature = "std")]
 use std::error;
 
-use hashes::{sha256, siphash24};
-use internals::ToU64 as _;
-use io::{BufRead, Write};
+use hashes::{sha256, siphash24, Hash};
+use internals::impl_array_newtype;
 
-use crate::consensus::encode::{self, Decodable, Encodable, ReadExt, WriteExt};
-use crate::internal_macros::{
-    impl_array_newtype, impl_array_newtype_stringify, impl_consensus_encoding,
-};
-use crate::prelude::Vec;
-use crate::transaction::TxIdentifier;
-use crate::{block, consensus, Block, BlockChecked, BlockHash, Transaction};
+use crate::consensus::encode::{self, Decodable, Encodable, VarInt};
+use crate::internal_macros::{impl_bytes_newtype, impl_consensus_encoding};
+use crate::prelude::*;
+use crate::{block, io, Block, BlockHash, Transaction};
 
 /// A BIP-152 error
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,10 +26,6 @@ pub enum Error {
     UnknownVersion,
     /// The prefill slice provided was invalid.
     InvalidPrefill,
-}
-
-impl From<Infallible> for Error {
-    fn from(never: Infallible) -> Self { match never {} }
 }
 
 impl fmt::Display for Error {
@@ -55,7 +48,7 @@ impl std::error::Error for Error {
     }
 }
 
-/// A [`PrefilledTransaction`] structure is used in [`HeaderAndShortIds`] to
+/// A [PrefilledTransaction] structure is used in [HeaderAndShortIds] to
 /// provide a list of a few transactions explicitly.
 #[derive(PartialEq, Eq, Clone, Debug, PartialOrd, Ord, Hash)]
 pub struct PrefilledTransaction {
@@ -80,18 +73,17 @@ impl convert::AsRef<Transaction> for PrefilledTransaction {
 
 impl Encodable for PrefilledTransaction {
     #[inline]
-    fn consensus_encode<W: Write + ?Sized>(&self, w: &mut W) -> Result<usize, io::Error> {
-        Ok(w.emit_compact_size(self.idx)? + self.tx.consensus_encode(w)?)
+    fn consensus_encode<W: io::Write + ?Sized>(&self, w: &mut W) -> Result<usize, io::Error> {
+        Ok(VarInt::from(self.idx).consensus_encode(w)? + self.tx.consensus_encode(w)?)
     }
 }
 
 impl Decodable for PrefilledTransaction {
     #[inline]
-    fn consensus_decode<R: BufRead + ?Sized>(r: &mut R) -> Result<Self, encode::Error> {
-        let idx = r.read_compact_size()?;
-        let idx = u16::try_from(idx).map_err(|_| {
-            consensus::parse_failed_error("BIP152 prefilled tx index out of bounds")
-        })?;
+    fn consensus_decode<R: io::Read + ?Sized>(r: &mut R) -> Result<Self, encode::Error> {
+        let idx = VarInt::consensus_decode(r)?.0;
+        let idx = u16::try_from(idx)
+            .map_err(|_| encode::Error::ParseFailed("BIP152 prefilled tx index out of bounds"))?;
         let tx = Transaction::consensus_decode(r)?;
         Ok(PrefilledTransaction { idx, tx })
     }
@@ -101,10 +93,10 @@ impl Decodable for PrefilledTransaction {
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Default, PartialOrd, Ord)]
 pub struct ShortId([u8; 6]);
 impl_array_newtype!(ShortId, u8, 6);
-impl_array_newtype_stringify!(ShortId, 6);
+impl_bytes_newtype!(ShortId, 6);
 
 impl ShortId {
-    /// Calculates the SipHash24 keys used to calculate short IDs.
+    /// Calculate the SipHash24 keys used to calculate short IDs.
     pub fn calculate_siphash_keys(header: &block::Header, nonce: u64) -> (u64, u64) {
         // 1. single-SHA256 hashing the block header with the nonce appended (in little-endian)
         let h = {
@@ -117,41 +109,39 @@ impl ShortId {
         // 2. Running SipHash-2-4 with the input being the transaction ID and the keys (k0/k1)
         // set to the first two little-endian 64-bit integers from the above hash, respectively.
         (
-            u64::from_le_bytes(h.as_byte_array()[0..8].try_into().expect("8 byte slice")),
-            u64::from_le_bytes(h.as_byte_array()[8..16].try_into().expect("8 byte slice")),
+            u64::from_le_bytes(h[0..8].try_into().expect("8 byte slice")),
+            u64::from_le_bytes(h[8..16].try_into().expect("8 byte slice")),
         )
     }
 
-    /// Calculates the short ID with the given (w)txid and using the provided SipHash keys.
-    pub fn with_siphash_keys<T: TxIdentifier>(txid: &T, siphash_keys: (u64, u64)) -> ShortId {
+    /// Calculate the short ID with the given (w)txid and using the provided SipHash keys.
+    pub fn with_siphash_keys<T: AsRef<[u8]>>(txid: &T, siphash_keys: (u64, u64)) -> ShortId {
         // 2. Running SipHash-2-4 with the input being the transaction ID and the keys (k0/k1)
         // set to the first two little-endian 64-bit integers from the above hash, respectively.
         let hash = siphash24::Hash::hash_with_keys(siphash_keys.0, siphash_keys.1, txid.as_ref());
 
         // 3. Dropping the 2 most significant bytes from the SipHash output to make it 6 bytes.
         let mut id = ShortId([0; 6]);
-        id.0.copy_from_slice(&hash.as_byte_array()[0..6]);
+        id.0.copy_from_slice(&hash[0..6]);
         id
     }
 }
 
 impl Encodable for ShortId {
     #[inline]
-    fn consensus_encode<W: Write + ?Sized>(&self, w: &mut W) -> Result<usize, io::Error> {
+    fn consensus_encode<W: io::Write + ?Sized>(&self, w: &mut W) -> Result<usize, io::Error> {
         self.0.consensus_encode(w)
     }
 }
 
 impl Decodable for ShortId {
     #[inline]
-    fn consensus_decode<R: BufRead + ?Sized>(r: &mut R) -> Result<ShortId, encode::Error> {
+    fn consensus_decode<R: io::Read + ?Sized>(r: &mut R) -> Result<ShortId, encode::Error> {
         Ok(ShortId(Decodable::consensus_decode(r)?))
     }
 }
 
-/// A structure to relay a block header, short IDs, and a select few transactions.
-///
-/// A [`HeaderAndShortIds`] structure is used to relay a block header, the short
+/// A [HeaderAndShortIds] structure is used to relay a block header, the short
 /// transactions IDs used for matching already-available transactions, and a
 /// select few transactions which we expect a peer may be missing.
 #[derive(PartialEq, Eq, Clone, Debug, PartialOrd, Ord, Hash)]
@@ -167,35 +157,10 @@ pub struct HeaderAndShortIds {
     ///  which we expect a peer may be missing.
     pub prefilled_txs: Vec<PrefilledTransaction>,
 }
-
-impl Decodable for HeaderAndShortIds {
-    fn consensus_decode<R: BufRead + ?Sized>(r: &mut R) -> Result<Self, encode::Error> {
-        let header_short_ids = HeaderAndShortIds {
-            header: Decodable::consensus_decode(r)?,
-            nonce: Decodable::consensus_decode(r)?,
-            short_ids: Decodable::consensus_decode(r)?,
-            prefilled_txs: Decodable::consensus_decode(r)?,
-        };
-        match header_short_ids.short_ids.len().checked_add(header_short_ids.prefilled_txs.len()) {
-            Some(x) if x <= u16::MAX.into() => Ok(header_short_ids),
-            _ => Err(consensus::parse_failed_error("indexes overflowed 16 bits")),
-        }
-    }
-}
-
-impl Encodable for HeaderAndShortIds {
-    fn consensus_encode<W: Write + ?Sized>(&self, w: &mut W) -> Result<usize, io::Error> {
-        let mut len = 0;
-        len += self.header.consensus_encode(w)?;
-        len += self.nonce.consensus_encode(w)?;
-        len += self.short_ids.consensus_encode(w)?;
-        len += self.prefilled_txs.consensus_encode(w)?;
-        Ok(len)
-    }
-}
+impl_consensus_encoding!(HeaderAndShortIds, header, nonce, short_ids, prefilled_txs);
 
 impl HeaderAndShortIds {
-    /// Constructs a new [`HeaderAndShortIds`] from a full block.
+    /// Create a new [HeaderAndShortIds] from a full block.
     ///
     /// The version number must be either 1 or 2.
     ///
@@ -206,7 +171,7 @@ impl HeaderAndShortIds {
     ///
     /// > Nodes SHOULD NOT use the same nonce across multiple different blocks.
     pub fn from_block(
-        block: &Block<BlockChecked>,
+        block: &Block,
         nonce: u64,
         version: u32,
         mut prefill: &[usize],
@@ -215,12 +180,12 @@ impl HeaderAndShortIds {
             return Err(Error::UnknownVersion);
         }
 
-        let siphash_keys = ShortId::calculate_siphash_keys(block.header(), nonce);
+        let siphash_keys = ShortId::calculate_siphash_keys(&block.header, nonce);
 
         let mut prefilled = Vec::with_capacity(prefill.len() + 1); // +1 for coinbase tx
-        let mut short_ids = Vec::with_capacity(block.transactions().len() - prefill.len());
+        let mut short_ids = Vec::with_capacity(block.txdata.len() - prefill.len());
         let mut last_prefill = 0;
-        for (idx, tx) in block.transactions().iter().enumerate() {
+        for (idx, tx) in block.txdata.iter().enumerate() {
             // Check if we should prefill this tx.
             let prefill_tx = if prefill.first() == Some(&idx) {
                 prefill = &prefill[1..];
@@ -251,13 +216,14 @@ impl HeaderAndShortIds {
                     },
                 });
             } else {
-                match version {
-                    1 =>
-                        short_ids.push(ShortId::with_siphash_keys(&tx.compute_txid(), siphash_keys)),
-                    2 => short_ids
-                        .push(ShortId::with_siphash_keys(&tx.compute_wtxid(), siphash_keys)),
-                    _ => unreachable!(),
-                }
+                short_ids.push(ShortId::with_siphash_keys(
+                    &match version {
+                        1 => tx.txid().to_raw_hash(),
+                        2 => tx.wtxid().to_raw_hash(),
+                        _ => unreachable!(),
+                    },
+                    siphash_keys,
+                ));
             }
         }
 
@@ -266,7 +232,7 @@ impl HeaderAndShortIds {
         }
 
         Ok(HeaderAndShortIds {
-            header: *block.header(),
+            header: block.header,
             nonce,
             // Provide coinbase prefilled.
             prefilled_txs: prefilled,
@@ -275,7 +241,7 @@ impl HeaderAndShortIds {
     }
 }
 
-/// A [`BlockTransactionsRequest`] structure is used to list transaction indexes
+/// A [BlockTransactionsRequest] structure is used to list transaction indexes
 /// in a block being requested.
 #[derive(PartialEq, Eq, Clone, Debug, PartialOrd, Ord, Hash)]
 pub struct BlockTransactionsRequest {
@@ -292,13 +258,13 @@ impl Encodable for BlockTransactionsRequest {
     ///
     /// Panics if the index overflows [`u64::MAX`]. This happens when [`BlockTransactionsRequest::indexes`]
     /// contains an entry with the value [`u64::MAX`] as `u64` overflows during differential encoding.
-    fn consensus_encode<W: Write + ?Sized>(&self, w: &mut W) -> Result<usize, io::Error> {
+    fn consensus_encode<W: io::Write + ?Sized>(&self, w: &mut W) -> Result<usize, io::Error> {
         let mut len = self.block_hash.consensus_encode(w)?;
         // Manually encode indexes because they are differentially encoded VarInts.
-        len += w.emit_compact_size(self.indexes.len())?;
+        len += VarInt(self.indexes.len() as u64).consensus_encode(w)?;
         let mut last_idx = 0;
         for idx in &self.indexes {
-            len += w.emit_compact_size(*idx - last_idx)?;
+            len += VarInt(*idx - last_idx).consensus_encode(w)?;
             last_idx = *idx + 1; // can panic here
         }
         Ok(len)
@@ -306,39 +272,38 @@ impl Encodable for BlockTransactionsRequest {
 }
 
 impl Decodable for BlockTransactionsRequest {
-    fn consensus_decode<R: BufRead + ?Sized>(r: &mut R) -> Result<Self, encode::Error> {
+    fn consensus_decode<R: io::Read + ?Sized>(r: &mut R) -> Result<Self, encode::Error> {
         Ok(BlockTransactionsRequest {
             block_hash: BlockHash::consensus_decode(r)?,
             indexes: {
                 // Manually decode indexes because they are differentially encoded VarInts.
-                let nb_indexes = r.read_compact_size()? as usize;
+                let nb_indexes = VarInt::consensus_decode(r)?.0 as usize;
 
                 // Since the number of indices ultimately represent transactions,
                 // we can limit the number of indices to the maximum number of
                 // transactions that would be allowed in a vector.
-                let byte_size = nb_indexes
+                let byte_size = (nb_indexes)
                     .checked_mul(mem::size_of::<Transaction>())
-                    .ok_or(consensus::parse_failed_error("invalid length"))?;
+                    .ok_or(encode::Error::ParseFailed("Invalid length"))?;
                 if byte_size > encode::MAX_VEC_SIZE {
-                    return Err(encode::ParseError::OversizedVectorAllocation {
+                    return Err(encode::Error::OversizedVectorAllocation {
                         requested: byte_size,
                         max: encode::MAX_VEC_SIZE,
-                    }
-                    .into());
+                    });
                 }
 
                 let mut indexes = Vec::with_capacity(nb_indexes);
                 let mut last_index: u64 = 0;
                 for _ in 0..nb_indexes {
-                    let differential = r.read_compact_size()?;
-                    last_index = match last_index.checked_add(differential) {
+                    let differential: VarInt = Decodable::consensus_decode(r)?;
+                    last_index = match last_index.checked_add(differential.0) {
                         Some(i) => i,
-                        None => return Err(consensus::parse_failed_error("block index overflow")),
+                        None => return Err(encode::Error::ParseFailed("block index overflow")),
                     };
                     indexes.push(last_index);
                     last_index = match last_index.checked_add(1) {
                         Some(i) => i,
-                        None => return Err(consensus::parse_failed_error("block index overflow")),
+                        None => return Err(encode::Error::ParseFailed("block index overflow")),
                     };
                 }
                 indexes
@@ -369,7 +334,7 @@ impl error::Error for TxIndexOutOfRangeError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> { None }
 }
 
-/// A [`BlockTransactions`] structure is used to provide some of the transactions
+/// A [BlockTransactions] structure is used to provide some of the transactions
 /// in a block, as requested.
 #[derive(PartialEq, Eq, Clone, Debug, PartialOrd, Ord, Hash)]
 pub struct BlockTransactions {
@@ -381,21 +346,21 @@ pub struct BlockTransactions {
 impl_consensus_encoding!(BlockTransactions, block_hash, transactions);
 
 impl BlockTransactions {
-    /// Constructs a new [`BlockTransactions`] from a [`BlockTransactionsRequest`] and
-    /// the corresponding full [`Block`] by providing all requested transactions.
+    /// Construct a [BlockTransactions] from a [BlockTransactionsRequest] and
+    /// the corresponsing full [Block] by providing all requested transactions.
     pub fn from_request(
         request: &BlockTransactionsRequest,
-        block: &Block<BlockChecked>,
+        block: &Block,
     ) -> Result<BlockTransactions, TxIndexOutOfRangeError> {
         Ok(BlockTransactions {
             block_hash: request.block_hash,
             transactions: {
                 let mut txs = Vec::with_capacity(request.indexes.len());
                 for idx in &request.indexes {
-                    if *idx >= block.transactions().len().to_u64() {
+                    if *idx >= block.txdata.len() as u64 {
                         return Err(TxIndexOutOfRangeError(*idx));
                     }
-                    txs.push(block.transactions()[*idx as usize].clone());
+                    txs.push(block.txdata[*idx as usize].clone());
                 }
                 txs
             },
@@ -408,18 +373,16 @@ mod test {
     use hex::FromHex;
 
     use super::*;
+    use crate::blockdata::locktime::absolute;
+    use crate::blockdata::transaction;
     use crate::consensus::encode::{deserialize, serialize};
-    use crate::locktime::absolute;
-    use crate::merkle_tree::TxMerkleNode;
-    use crate::transaction::OutPointExt;
+    use crate::hash_types::TxMerkleNode;
     use crate::{
-        transaction, Amount, BlockChecked, CompactTarget, OutPoint, ScriptBuf, Sequence, TxIn,
-        TxOut, Txid, Witness,
+        Amount, CompactTarget, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid,
+        Witness,
     };
-    use crate::blockdata::transaction::TxidExt;
 
     fn dummy_tx(nonce: &[u8]) -> Transaction {
-        let dummy_txid = Txid::from_byte_array(hashes::sha256::Hash::hash(nonce).to_byte_array());
         Transaction {
             version: transaction::Version::ONE,
             assettype: 0,
@@ -430,7 +393,7 @@ mod test {
             payloaddata: "".to_string(),
             lock_time: absolute::LockTime::from_consensus(2),
             input: vec![TxIn {
-                previous_output: OutPoint::new(dummy_txid, 0),
+                previous_output: OutPoint::new(Txid::hash(nonce), 0),
                 script_sig: ScriptBuf::new(),
                 sequence: Sequence(1),
                 witness: Witness::new(),
@@ -439,21 +402,22 @@ mod test {
         }
     }
 
-    fn dummy_block() -> Block<BlockChecked> {
-        let header = block::Header {
-            version: block::Version::ONE,
-            prev_blockhash: BlockHash::from_byte_array([0x99; 32]),
-            merkle_root: TxMerkleNode::from_byte_array([0x77; 32]),
-            time: 2,
-            bits: CompactTarget::from_consensus(3),
-            nonce: 4,
-        };
-        let transactions = vec![dummy_tx(&[2]), dummy_tx(&[3]), dummy_tx(&[4])];
-        Block::new_unchecked(header, transactions).assume_checked(None)
+    fn dummy_block() -> Block {
+        Block {
+            header: block::Header {
+                version: block::Version::ONE,
+                prev_blockhash: BlockHash::hash(&[0]),
+                merkle_root: TxMerkleNode::hash(&[1]),
+                time: 2,
+                bits: CompactTarget::from_consensus(3),
+                nonce: 4,
+            },
+            txdata: vec![dummy_tx(&[2]), dummy_tx(&[3]), dummy_tx(&[4])],
+        }
     }
 
     #[test]
-    fn header_and_short_ids_from_block() {
+    fn test_header_and_short_ids_from_block() {
         let block = dummy_block();
 
         let compact = HeaderAndShortIds::from_block(&block, 42, 2, &[]).unwrap();
@@ -461,25 +425,24 @@ mod test {
         assert_eq!(compact.short_ids.len(), 2);
         assert_eq!(compact.prefilled_txs.len(), 1);
         assert_eq!(compact.prefilled_txs[0].idx, 0);
-        assert_eq!(&compact.prefilled_txs[0].tx, &block.transactions()[0]);
+        assert_eq!(&compact.prefilled_txs[0].tx, &block.txdata[0]);
 
         let compact = HeaderAndShortIds::from_block(&block, 42, 2, &[0, 1, 2]).unwrap();
         let idxs = compact.prefilled_txs.iter().map(|t| t.idx).collect::<Vec<_>>();
-        assert_eq!(idxs, [0, 0, 0]);
+        assert_eq!(idxs, vec![0, 0, 0]);
 
         let compact = HeaderAndShortIds::from_block(&block, 42, 2, &[2]).unwrap();
         let idxs = compact.prefilled_txs.iter().map(|t| t.idx).collect::<Vec<_>>();
-        assert_eq!(idxs, [0, 1]);
+        assert_eq!(idxs, vec![0, 1]);
     }
 
     #[test]
-    fn compact_block_vector() {
+    fn test_compact_block_vector() {
         // Tested with Elements implementation of compact blocks.
         let raw_block = Vec::<u8>::from_hex("000000206c750a364035aefd5f81508a08769975116d9195312ee4520dceac39e1fdc62c4dc67473b8e354358c1e610afeaff7410858bd45df43e2940f8a62bd3d5e3ac943c2975cffff7f200000000002020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff04016b0101ffffffff020006062a0100000001510000000000000000266a24aa21a9ed4a3d9f3343dafcc0d6f6d4310f2ee5ce273ed34edca6c75db3a73e7f368734200120000000000000000000000000000000000000000000000000000000000000000000000000020000000001021fc20ba2bd745507b8e00679e3b362558f9457db374ca28ffa5243f4c23a4d5f00000000171600147c9dea14ffbcaec4b575e03f05ceb7a81cd3fcbffdffffff915d689be87b43337f42e26033df59807b768223368f189a023d0242d837768900000000171600147c9dea14ffbcaec4b575e03f05ceb7a81cd3fcbffdffffff0200cdf5050000000017a9146803c72d9154a6a20f404bed6d3dcee07986235a8700e1f5050000000017a9144e6a4c7cb5b5562904843bdf816342f4db9f5797870247304402205e9bf6e70eb0e4b495bf483fd8e6e02da64900f290ef8aaa64bb32600d973c450220670896f5d0e5f33473e5f399ab680cc1d25c2d2afd15abd722f04978f28be887012103e4e4d9312b2261af508b367d8ba9be4f01b61d6d6e78bec499845b4f410bcf2702473044022045ac80596a6ac9c8c572f94708709adaf106677221122e08daf8b9741a04f66a022003ccd52a3b78f8fd08058fc04fc0cffa5f4c196c84eae9e37e2a85babe731b57012103e4e4d9312b2261af508b367d8ba9be4f01b61d6d6e78bec499845b4f410bcf276a000000").unwrap();
         let raw_compact = Vec::<u8>::from_hex("000000206c750a364035aefd5f81508a08769975116d9195312ee4520dceac39e1fdc62c4dc67473b8e354358c1e610afeaff7410858bd45df43e2940f8a62bd3d5e3ac943c2975cffff7f2000000000a4df3c3744da89fa010a6979e971450100020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff04016b0101ffffffff020006062a0100000001510000000000000000266a24aa21a9ed4a3d9f3343dafcc0d6f6d4310f2ee5ce273ed34edca6c75db3a73e7f368734200120000000000000000000000000000000000000000000000000000000000000000000000000").unwrap();
 
         let block: Block = deserialize(&raw_block).unwrap();
-        let block = block.assume_checked(None);
         let nonce = 18053200567810711460;
         let compact = HeaderAndShortIds::from_block(&block, nonce, 2, &[]).unwrap();
         let compact_expected = deserialize(&raw_compact).unwrap();
@@ -488,7 +451,7 @@ mod test {
     }
 
     #[test]
-    fn getblocktx_differential_encoding_de_and_serialization() {
+    fn test_getblocktx_differential_encoding_de_and_serialization() {
         let testcases = vec![
             // differentially encoded VarInts, indicies
             (vec![4, 0, 5, 1, 10], vec![0, 6, 8, 19]),
@@ -512,7 +475,7 @@ mod test {
             {
                 // test serialization
                 let raw: Vec<u8> = serialize(&BlockTransactionsRequest {
-                    block_hash: BlockHash::from_byte_array([0; 32]),
+                    block_hash: Hash::all_zeros(),
                     indexes: testcase.1,
                 });
                 let mut expected_raw: Vec<u8> = [0u8; 32].to_vec();
@@ -531,12 +494,11 @@ mod test {
     }
 
     #[test]
-    #[cfg(debug_assertions)]
     #[should_panic] // 'attempt to add with overflow' in consensus_encode()
-    fn getblocktx_panic_when_encoding_u64_max() {
+    fn test_getblocktx_panic_when_encoding_u64_max() {
         serialize(&BlockTransactionsRequest {
-            block_hash: BlockHash::from_byte_array([0; 32]),
-            indexes: vec![u64::MAX],
+            block_hash: Hash::all_zeros(),
+            indexes: vec![core::u64::MAX],
         });
     }
 }

@@ -1,8 +1,5 @@
-use bitcoin::address::script_pubkey::ScriptBufExt as _;
-use bitcoin::script::ScriptExt as _;
-use bitcoin::{
-    consensus, ecdsa, sighash, Amount, CompressedPublicKey, Script, ScriptBuf, Transaction,
-};
+use bitcoin::hashes::Hash;
+use bitcoin::{consensus, ecdsa, sighash, Amount, PublicKey, Script, ScriptBuf, Transaction};
 use hex_lit::hex;
 
 //These are real blockchain transactions examples of computing sighash for:
@@ -13,9 +10,11 @@ use hex_lit::hex;
 
 //run with: cargo run --example sighash
 
-/// Computes SegWit sighash for a transaction input that spends a p2wpkh output with "witness_v0_keyhash" scriptPubKey.type
+//TODO add P2TR examples, ideally for both key-path and script-path spending
+
+/// Computes segwit sighash for a transaction input that spends a p2wpkh output with "witness_v0_keyhash" scriptPubKey.type
 ///
-/// # Parameters
+/// # Arguments
 ///
 /// * `raw_tx` - spending tx hex
 /// * `inp_idx` - spending tx input index
@@ -36,25 +35,25 @@ fn compute_sighash_p2wpkh(raw_tx: &[u8], inp_idx: usize, value: u64) {
 
     //BIP-143: "The item 5 : For P2WPKH witness program, the scriptCode is 0x1976a914{20-byte-pubkey-hash}88ac"
     //this is nothing but a standard P2PKH script OP_DUP OP_HASH160 <pubKeyHash> OP_EQUALVERIFY OP_CHECKSIG:
-    let pk = CompressedPublicKey::from_slice(pk_bytes).expect("failed to parse pubkey");
-    let wpkh = pk.wpubkey_hash();
+    let pk = PublicKey::from_slice(pk_bytes).expect("failed to parse pubkey");
+    let wpkh = pk.wpubkey_hash().expect("compressed key");
     println!("Script pubkey hash: {:x}", wpkh);
-    let spk = ScriptBuf::new_p2wpkh(wpkh);
+    let spk = ScriptBuf::new_p2wpkh(&wpkh);
 
     let mut cache = sighash::SighashCache::new(&tx);
     let sighash = cache
-        .p2wpkh_signature_hash(inp_idx, &spk, Amount::from_sat(value), sig.sighash_type)
+        .p2wpkh_signature_hash(inp_idx, &spk, Amount::from_sat(value), sig.hash_ty)
         .expect("failed to compute sighash");
-    println!("SegWit p2wpkh sighash: {:x}", sighash);
-    let msg = secp256k1::Message::from(sighash);
+    println!("Segwit p2wpkh sighash: {:x}", sighash);
+    let msg = secp256k1::Message::from_digest(sighash.to_byte_array());
     println!("Message is {:x}", msg);
     let secp = secp256k1::Secp256k1::verification_only();
-    pk.verify(&secp, msg, sig).unwrap()
+    secp.verify_ecdsa(&msg, &sig.sig, &pk.inner).unwrap();
 }
 
 /// Computes sighash for a legacy multisig transaction input that spends either a p2sh or a p2ms output.
 ///
-/// # Parameters
+/// # Arguments
 ///
 /// * `raw_tx` - spending tx hex
 /// * `inp_idx` - spending tx input inde
@@ -92,15 +91,15 @@ fn compute_sighash_legacy(raw_tx: &[u8], inp_idx: usize, script_pubkey_bytes_opt
         let sig = ecdsa::Signature::from_slice(instr.unwrap().push_bytes().unwrap().as_bytes())
             .expect("failed to parse sig");
         let sighash = cache
-            .legacy_signature_hash(inp_idx, script_code, sig.sighash_type.to_u32())
+            .legacy_signature_hash(inp_idx, script_code, sig.hash_ty.to_u32())
             .expect("failed to compute sighash");
-        println!("Legacy sighash: {:x} (sighash flag {})", sighash, sig.sighash_type);
+        println!("Legacy sighash: {:x} (sighash flag {})", sighash, sig.hash_ty);
     }
 }
 
-/// Computes sighash for a SegWit multisig transaction input that spends a p2wsh output with "witness_v0_scripthash" scriptPubKey.type
+/// Computes sighash for a segwit multisig transaction input that spends a p2wsh output with "witness_v0_scripthash" scriptPubKey.type
 ///
-/// # Parameters
+/// # Arguments
 ///
 /// * `raw_tx` - spending tx hex
 /// * `inp_idx` - spending tx input index
@@ -112,27 +111,22 @@ fn compute_sighash_p2wsh(raw_tx: &[u8], inp_idx: usize, value: u64) {
     println!("witness {:?}", witness);
 
     //last element is called witnessScript according to BIP141. It supersedes scriptPubKey.
-    let witness_script_bytes: &[u8] = witness.last().expect("out of bounds");
+    let witness_script_bytes: &[u8] = witness.last().expect("Out of Bounds");
     let witness_script = Script::from_bytes(witness_script_bytes);
     let mut cache = sighash::SighashCache::new(&tx);
 
     //in an M of N multisig, the witness elements from 1 (0-based) to M-2 are signatures (with sighash flags as the last byte)
     for n in 1..=witness.len() - 2 {
-        let sig_bytes = witness.nth(n).expect("out of bounds");
+        let sig_bytes = witness.nth(n).expect("Out of Bounds");
         let sig = ecdsa::Signature::from_slice(sig_bytes).expect("failed to parse sig");
         let sig_len = sig_bytes.len() - 1; //last byte is EcdsaSighashType sighash flag
                                            //ECDSA signature in DER format lengths are between 70 and 72 bytes
         assert!((70..=72).contains(&sig_len), "signature length {} out of bounds", sig_len);
         //here we assume that all sighash_flags are the same. Can they be different?
         let sighash = cache
-            .p2wsh_signature_hash(
-                inp_idx,
-                witness_script,
-                Amount::from_sat(value),
-                sig.sighash_type,
-            )
+            .p2wsh_signature_hash(inp_idx, witness_script, Amount::from_sat(value), sig.hash_ty)
             .expect("failed to compute sighash");
-        println!("SegWit p2wsh sighash: {:x} ({})", sighash, sig.sighash_type);
+        println!("Segwit p2wsh sighash: {:x} ({})", sighash, sig.hash_ty);
     }
 }
 

@@ -2,106 +2,96 @@
 
 //! Bitcoin hash types.
 //!
-//! This module is deprecated. You can find hash types in their respective, hopefully obvious, modules.
+//! This module defines types for hashes used throughout the library. These
+//! types are needed in order to avoid mixing data of the same hash format
+//! (e.g. `SHA256d`) but of different meaning (such as transaction id, block
+//! hash).
+//!
 
-#[deprecated(since = "TBD", note = "use `crate::T` instead")]
-pub use crate::{
-    BlockHash, FilterHash, FilterHeader, TxMerkleNode, Txid, WitnessCommitment, WitnessMerkleNode,
-    Wtxid,
-};
+#[rustfmt::skip]
+macro_rules! impl_hashencode {
+    ($hashtype:ident) => {
+        impl $crate::consensus::Encodable for $hashtype {
+            fn consensus_encode<W: $crate::io::Write + ?Sized>(&self, w: &mut W) -> Result<usize, $crate::io::Error> {
+                self.0.consensus_encode(w)
+            }
+        }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        LegacySighash, PubkeyHash, ScriptHash, SegwitV0Sighash, TapSighash, WPubkeyHash,
-        WScriptHash, XKeyIdentifier,
+        impl $crate::consensus::Decodable for $hashtype {
+            fn consensus_decode<R: $crate::io::Read + ?Sized>(r: &mut R) -> Result<Self, $crate::consensus::encode::Error> {
+                use $crate::hashes::Hash;
+                Ok(Self::from_byte_array(<<$hashtype as $crate::hashes::Hash>::Bytes>::consensus_decode(r)?))
+            }
+        }
     };
+}
 
-    #[rustfmt::skip]
-    /// sha256d of the empty string
-    const DUMMY32: [u8; 32] = [
-        0x5d, 0xf6, 0xe0, 0xe2, 0x76, 0x13, 0x59, 0xd3,
-        0x0a, 0x82, 0x75, 0x05, 0x8e, 0x29, 0x9f, 0xcc,
-        0x03, 0x81, 0x53, 0x45, 0x45, 0xf5, 0x5c, 0xf4,
-        0x3e, 0x41, 0x98, 0x3f, 0x5d, 0x4c, 0x94, 0x56,
-    ];
-    /// hash160 of the empty string
-    #[rustfmt::skip]
-    const DUMMY20: [u8; 20] = [
-        0xb4, 0x72, 0xa2, 0x66, 0xd0, 0xbd, 0x89, 0xc1, 0x37, 0x06,
-        0xa4, 0x13, 0x2c, 0xcf, 0xb1, 0x6f, 0x7c, 0x3b, 0x9f, 0xcb,
-    ];
+#[rustfmt::skip]
+macro_rules! impl_asref_push_bytes {
+    ($($hashtype:ident),*) => {
+        $(
+            impl AsRef<$crate::blockdata::script::PushBytes> for $hashtype {
+                fn as_ref(&self) -> &$crate::blockdata::script::PushBytes {
+                    use $crate::hashes::Hash;
+                    self.as_byte_array().into()
+                }
+            }
 
-    #[test]
-    fn hash_display() {
-        assert_eq!(
-            Txid::from_byte_array(DUMMY32).to_string(),
-            "56944c5d3f98413ef45cf54545538103cc9f298e0575820ad3591376e2e0f65d",
-        );
+            impl From<$hashtype> for $crate::blockdata::script::PushBytesBuf {
+                fn from(hash: $hashtype) -> Self {
+                    use $crate::hashes::Hash;
+                    hash.as_byte_array().into()
+                }
+            }
+        )*
+    };
+}
+pub(crate) use impl_asref_push_bytes;
 
-        assert_eq!(
-            Wtxid::from_byte_array(DUMMY32).to_string(),
-            "56944c5d3f98413ef45cf54545538103cc9f298e0575820ad3591376e2e0f65d",
-        );
-        assert_eq!(
-            BlockHash::from_byte_array(DUMMY32).to_string(),
-            "56944c5d3f98413ef45cf54545538103cc9f298e0575820ad3591376e2e0f65d",
-        );
-        assert_eq!(
-            LegacySighash::from_byte_array(DUMMY32).to_string(),
-            "5df6e0e2761359d30a8275058e299fcc0381534545f55cf43e41983f5d4c9456",
-        );
-        assert_eq!(
-            SegwitV0Sighash::from_byte_array(DUMMY32).to_string(),
-            "5df6e0e2761359d30a8275058e299fcc0381534545f55cf43e41983f5d4c9456",
-        );
-        assert_eq!(
-            TapSighash::from_byte_array(DUMMY32).to_string(),
-            "5df6e0e2761359d30a8275058e299fcc0381534545f55cf43e41983f5d4c9456",
-        );
+// newtypes module is solely here so we can rustfmt::skip.
+#[rustfmt::skip]
+#[doc(inline)]
+pub use newtypes::*;
 
-        assert_eq!(
-            PubkeyHash::from_byte_array(DUMMY20).to_string(),
-            "b472a266d0bd89c13706a4132ccfb16f7c3b9fcb",
-        );
-        assert_eq!(
-            ScriptHash::from_byte_array(DUMMY20).to_string(),
-            "b472a266d0bd89c13706a4132ccfb16f7c3b9fcb",
-        );
-        assert_eq!(
-            WPubkeyHash::from_byte_array(DUMMY20).to_string(),
-            "b472a266d0bd89c13706a4132ccfb16f7c3b9fcb",
-        );
-        assert_eq!(
-            WScriptHash::from_byte_array(DUMMY32).to_string(),
-            "5df6e0e2761359d30a8275058e299fcc0381534545f55cf43e41983f5d4c9456",
-        );
+#[rustfmt::skip]
+mod newtypes {
+    use hashes::{sha256d, hash_newtype};
 
-        assert_eq!(
-            TxMerkleNode::from_byte_array(DUMMY32).to_string(),
-            "56944c5d3f98413ef45cf54545538103cc9f298e0575820ad3591376e2e0f65d",
-        );
-        assert_eq!(
-            WitnessMerkleNode::from_byte_array(DUMMY32).to_string(),
-            "56944c5d3f98413ef45cf54545538103cc9f298e0575820ad3591376e2e0f65d",
-        );
-        assert_eq!(
-            WitnessCommitment::from_byte_array(DUMMY32).to_string(),
-            "56944c5d3f98413ef45cf54545538103cc9f298e0575820ad3591376e2e0f65d",
-        );
-        assert_eq!(
-            XKeyIdentifier::from_byte_array(DUMMY20).to_string(),
-            "b472a266d0bd89c13706a4132ccfb16f7c3b9fcb",
-        );
+    hash_newtype! {
+        /// A bitcoin transaction hash/transaction ID.
+        ///
+        /// For compatibility with the existing Bitcoin infrastructure and historical
+        /// and current versions of the Bitcoin Core software itself, this and
+        /// other [`sha256d::Hash`] types, are serialized in reverse
+        /// byte order when converted to a hex string via [`std::fmt::Display`] trait operations.
+        /// See [`hashes::Hash::DISPLAY_BACKWARD`] for more details.
+        pub struct Txid(sha256d::Hash); 
 
-        assert_eq!(
-            FilterHash::from_byte_array(DUMMY32).to_string(),
-            "56944c5d3f98413ef45cf54545538103cc9f298e0575820ad3591376e2e0f65d",
-        );
-        assert_eq!(
-            FilterHeader::from_byte_array(DUMMY32).to_string(),
-            "56944c5d3f98413ef45cf54545538103cc9f298e0575820ad3591376e2e0f65d",
-        );
+        /// A bitcoin witness transaction ID.
+        pub struct Wtxid(sha256d::Hash);
+        /// A bitcoin block hash.
+        pub struct BlockHash(sha256d::Hash);
+
+        /// A hash of the Merkle tree branch or root for transactions
+        pub struct TxMerkleNode(sha256d::Hash);
+        /// A hash corresponding to the Merkle tree root for witness data
+        pub struct WitnessMerkleNode(sha256d::Hash);
+        /// A hash corresponding to the witness structure commitment in the coinbase transaction
+        pub struct WitnessCommitment(sha256d::Hash);
+
+        /// Filter hash, as defined in BIP-157
+        pub struct FilterHash(sha256d::Hash);
+        /// Filter header, as defined in BIP-157
+        pub struct FilterHeader(sha256d::Hash);
     }
+
+    impl_hashencode!(Txid);
+    impl_hashencode!(Wtxid);
+    impl_hashencode!(BlockHash);
+
+    impl_hashencode!(TxMerkleNode);
+    impl_hashencode!(WitnessMerkleNode);
+
+    impl_hashencode!(FilterHash);
+    impl_hashencode!(FilterHeader);
 }

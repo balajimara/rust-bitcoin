@@ -9,7 +9,7 @@
 /// The resulting type is public, conditionally implements [`std::error::Error`] and has a private
 /// `new()` method for convenience.
 ///
-/// # Parameters
+/// ## Parameters
 ///
 /// * `name` - the name of the error type
 /// * `source` - the type of the source type
@@ -25,7 +25,7 @@ macro_rules! parse_error_type {
         }
 
         impl $name {
-            /// Constructs a new `Self`.
+            /// Creates `Self`.
             fn new<T: Into<$crate::error::InputString>>(input: T, source: $source) -> Self {
                 $name {
                     input: input.into(),
@@ -36,7 +36,7 @@ macro_rules! parse_error_type {
 
         impl core::fmt::Display for $name {
             fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                $crate::error::write_err!(f, "{}", self.input.display_cannot_parse($subject); self.source)
+                $crate::error::write_err!("{}", self.input.display_cannot_parse($subject); self.source)
             }
         }
 

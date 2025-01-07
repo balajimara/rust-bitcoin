@@ -12,9 +12,9 @@
     <a href="https://github.com/rust-bitcoin/rust-bitcoin/blob/master/LICENSE"><img alt="CC0 1.0 Universal Licensed" src="https://img.shields.io/badge/license-CC0--1.0-blue.svg"/></a>
     <a href="https://github.com/rust-bitcoin/rust-bitcoin/actions?query=workflow%3AContinuous%20integration"><img alt="CI Status" src="https://github.com/rust-bitcoin/rust-bitcoin/workflows/Continuous%20integration/badge.svg"></a>
     <a href="https://docs.rs/bitcoin"><img alt="API Docs" src="https://img.shields.io/badge/docs.rs-bitcoin-green"/></a>
-    <a href="https://blog.rust-lang.org/2022/08/11/Rust-1.63.0.html"><img alt="Rustc Version 1.63.0+" src="https://img.shields.io/badge/rustc-1.63.0%2B-lightgrey.svg"/></a>
+    <a href="https://blog.rust-lang.org/2020/02/27/Rust-1.48.0.html"><img alt="Rustc Version 1.48.0+" src="https://img.shields.io/badge/rustc-1.48.0%2B-lightgrey.svg"/></a>
     <a href="https://gnusha.org/bitcoin-rust/"><img alt="Chat on IRC" src="https://img.shields.io/badge/irc-%23bitcoin--rust%20on%20libera.chat-blue"></a>
-    <a href="https://github.com/model-checking/kani"><img alt="kani" src="https://github.com/rust-bitcoin/rust-bitcoin/workflows/Kani%20CI/badge.svg"></a>
+    <a href="https://github.com/model-checking/kani"><imp alt="kani" src="https://github.com/rust-bitcoin/rust-bitcoin/actions/workflows/kani.yaml/badge.svg"></a>
   </p>
 </div>
 
@@ -49,15 +49,8 @@ are no plans to do so. Of course, patches to fix specific consensus incompatibil
 
 ### Support for 16-bit pointer sizes
 
-16-bit pointer sizes are not supported, and we can't promise they will be. If you care about them
+16-bit pointer sizes are not supported and we can't promise they will be. If you care about them
 please let us know, so we can know how large the interest is and possibly decide to support them.
-
-### Semver compliance
-
-We try hard to maintain strict semver compliance with our releases. This codebase includes some
-public functions marked unstable (e.g., `pub fn foo__unstable()`). These functions do not adhere to
-semver rules; use them at your own discretion.
-
 
 ## Documentation
 
@@ -72,13 +65,14 @@ questions or ideas you want to discuss please join us in
 [#bitcoin-rust](https://web.libera.chat/?channel=#bitcoin-rust) on
 [libera.chat](https://libera.chat).
 
-For more information please see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+For more information please see `./CONTRIBUTING.md`.
 
 ## Minimum Supported Rust Version (MSRV)
 
-This library should compile with any combination of features on **Rust 1.63.0**.
+This library should always compile with any combination of features on **Rust 1.48.0**.
 
-Use `Cargo-minimal.lock` to build the MSRV by copying to `Cargo.lock` and building.
+To build with the MSRV you will likely need to pin a bunch of dependencies, see `./contrib/test.sh`
+for the current list.
 
 ## External dependencies
 
@@ -103,6 +97,13 @@ current stable one (see MSRV section).
 
 ## Building
 
+The cargo feature `std` is enabled by default. At least one of the features `std` or `no-std` or
+both must be enabled.
+
+Enabling the `no-std` feature does not disable `std`. To disable the `std` feature you must disable
+default features. The `no-std` feature only enables additional features required for this crate to
+be usable without `std`. Both can be enabled without conflict.
+
 The library can be built and tested using [`cargo`](https://github.com/rust-lang/cargo/):
 
 ```
@@ -119,15 +120,6 @@ cargo test
 
 Please refer to the [`cargo` documentation](https://doc.rust-lang.org/stable/cargo/) for more
 detailed instructions.
-
-### No-std support
-
-The `std` cargo feature is enabled by default. To build this project without the Rust standard
-library, use the `--no-default-features` flag or set `default-features = false` in your dependency
-declaration when adding it to your project.
-
-For embedded device examples, see [`bitcoin/embedded`](https://github.com/rust-bitcoin/rust-bitcoin/tree/master/bitcoin/embedded)
-or [`hashes/embedded`](https://github.com/rust-bitcoin/rust-bitcoin/tree/master/hashes/embedded).
 
 ### Just
 
@@ -194,8 +186,14 @@ fixing `act` issues.
 
 ### Githooks
 
-To assist devs in catching errors _before_ running CI we provide some githooks. Copy the hooks in `githooks/`
-to your githooks folder or run `just githooks-install` to copy them all.
+To assist devs in catching errors _before_ running CI we provide some githooks. If you do not
+already have locally configured githooks you can use the ones in this repository by running, in the
+root directory of the repository:
+```
+git config --local core.hooksPath githooks/
+```
+
+Alternatively add symlinks in your `.git/hooks` directory to any of the githooks we provide.
 
 ## Policy on Altcoins/Altchains
 
@@ -211,14 +209,9 @@ Our code is public domain so by all means fork it and go wild :)
 
 Release notes are done per crate, see:
 
-- [`bitcoin` CHANGELOG](bitcoin/CHANGELOG.md)
-- [`addresses` CHANGELOG](addresses/CHANGELOG.md)
-- [`base58` CHANGELOG](base58/CHANGELOG.md)
-- [`hashes` CHANGELOG](hashes/CHANGELOG.md)
-- [`internals` CHANGELOG](internals/CHANGELOG.md)
-- [`io` CHANGELOG](io/CHANGELOG.md)
-- [`primitives` CHANGELOG](primitives/CHANGELOG.md)
-- [`units` CHANGELOG](units/CHANGELOG.md)
+- [bitcoin CHANGELOG](bitcoin/CHANGELOG.md)
+- [hashes CHANGELOG](hashes/CHANGELOG.md)
+- [internals CHANGELOG](internals/CHANGELOG.md)
 
 
 ## Licensing

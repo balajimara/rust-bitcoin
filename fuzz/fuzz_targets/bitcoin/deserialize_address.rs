@@ -1,8 +1,10 @@
+use std::str::FromStr;
+
 use honggfuzz::fuzz;
 
 fn do_test(data: &[u8]) {
     let data_str = String::from_utf8_lossy(data);
-    let addr = match data_str.parse::<bitcoin::address::Address<_>>() {
+    let addr = match bitcoin::address::Address::from_str(&data_str) {
         Ok(addr) => addr.assume_checked(),
         Err(_) => return,
     };

@@ -4,20 +4,26 @@
 //!
 //! Implementation of BIP32 hierarchical deterministic wallets, as defined
 //! at <https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki>.
+//!
 
+use core::convert::TryInto;
+use core::default::Default;
 use core::ops::Index;
 use core::str::FromStr;
 use core::{fmt, slice};
-use core::convert::Infallible;
 
-use hashes::{hash160, hash_newtype, sha512, GeneralHash, HashEngine, Hmac, HmacEngine};
-use internals::write_err;
-use secp256k1::{Secp256k1, XOnlyPublicKey};
+use hashes::{hash160, hash_newtype, sha512, Hash, HashEngine, Hmac, HmacEngine};
+use internals::{impl_array_newtype, write_err};
+use secp256k1::{self, Secp256k1, XOnlyPublicKey};
+#[cfg(feature = "serde")]
+use serde;
 
-use crate::crypto::key::{CompressedPublicKey, Keypair, PrivateKey};
-use crate::internal_macros::{impl_array_newtype, impl_array_newtype_stringify};
-use crate::network::NetworkKind;
-use crate::prelude::{String, Vec};
+use crate::base58;
+use crate::crypto::key::{self, Keypair, PrivateKey, PublicKey};
+use crate::internal_macros::impl_bytes_newtype;
+use crate::io::Write;
+use crate::network::Network;
+use crate::prelude::*;
 
 /// Version bytes for extended public keys on the Bitcoin network.
 const VERSION_BYTES_MAINNET_PUBLIC: [u8; 4] = [0x04, 0x88, 0xB2, 0x1E];
@@ -28,23 +34,15 @@ const VERSION_BYTES_TESTNETS_PUBLIC: [u8; 4] = [0x04, 0x35, 0x87, 0xCF];
 /// Version bytes for extended private keys on any of the testnet networks.
 const VERSION_BYTES_TESTNETS_PRIVATE: [u8; 4] = [0x04, 0x35, 0x83, 0x94];
 
-/// The old name for xpub, extended public key.
-#[deprecated(since = "0.31.0", note = "use `Xpub` instead")]
-pub type ExtendedPubKey = Xpub;
-
-/// The old name for xpriv, extended public key.
-#[deprecated(since = "0.31.0", note = "use `Xpriv` instead")]
-pub type ExtendedPrivKey = Xpriv;
-
 /// A chain code
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ChainCode([u8; 32]);
 impl_array_newtype!(ChainCode, u8, 32);
-impl_array_newtype_stringify!(ChainCode, 32);
+impl_bytes_newtype!(ChainCode, 32);
 
 impl ChainCode {
     fn from_hmac(hmac: Hmac<sha512::Hash>) -> Self {
-        hmac.as_ref()[32..].try_into().expect("half of hmac is guaranteed to be 32 bytes")
+        hmac[32..].try_into().expect("half of hmac is guaranteed to be 32 bytes")
     }
 }
 
@@ -52,23 +50,19 @@ impl ChainCode {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Fingerprint([u8; 4]);
 impl_array_newtype!(Fingerprint, u8, 4);
-impl_array_newtype_stringify!(Fingerprint, 4);
+impl_bytes_newtype!(Fingerprint, 4);
 
 hash_newtype! {
     /// Extended key identifier as defined in BIP-32.
     pub struct XKeyIdentifier(hash160::Hash);
 }
 
-hashes::impl_hex_for_newtype!(XKeyIdentifier);
-#[cfg(feature = "serde")]
-hashes::impl_serde_for_newtype!(XKeyIdentifier);
-
 /// Extended private key
 #[derive(Copy, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(Debug))]
 pub struct Xpriv {
     /// The network this key is to be used on
-    pub network: NetworkKind,
+    pub network: Network,
     /// How many derivations this key is from the master (which is 0)
     pub depth: u8,
     /// Fingerprint of the parent key (0 for master)
@@ -81,7 +75,7 @@ pub struct Xpriv {
     pub chain_code: ChainCode,
 }
 #[cfg(feature = "serde")]
-internals::serde_string_impl!(Xpriv, "a BIP-32 extended private key");
+crate::serde_utils::serde_string_impl!(Xpriv, "a BIP-32 extended private key");
 
 #[cfg(not(feature = "std"))]
 impl fmt::Debug for Xpriv {
@@ -100,8 +94,8 @@ impl fmt::Debug for Xpriv {
 /// Extended public key
 #[derive(Copy, Clone, PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]
 pub struct Xpub {
-    /// The network kind this key is to be used on
-    pub network: NetworkKind,
+    /// The network this key is to be used on
+    pub network: Network,
     /// How many derivations this key is from the master (which is 0)
     pub depth: u8,
     /// Fingerprint of the parent key
@@ -114,7 +108,7 @@ pub struct Xpub {
     pub chain_code: ChainCode,
 }
 #[cfg(feature = "serde")]
-internals::serde_string_impl!(Xpub, "a BIP-32 extended public key");
+crate::serde_utils::serde_string_impl!(Xpub, "a BIP-32 extended public key");
 
 /// A child number for a derived key
 #[derive(Copy, Clone, PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]
@@ -130,20 +124,9 @@ pub enum ChildNumber {
         index: u32,
     },
 }
+
 impl ChildNumber {
-    /// Normal child number with index 0.
-    pub const ZERO_NORMAL: Self = ChildNumber::Normal { index: 0 };
-
-    /// Normal child number with index 1.
-    pub const ONE_NORMAL: Self = ChildNumber::Normal { index: 1 };
-
-    /// Hardened child number with index 0.
-    pub const ZERO_HARDENED: Self = ChildNumber::Hardened { index: 0 };
-
-    /// Hardened child number with index 1.
-    pub const ONE_HARDENED: Self = ChildNumber::Hardened { index: 1 };
-
-    /// Constructs a new [`Normal`] from an index, returns an error if the index is not within
+    /// Create a [`Normal`] from an index, returns an error if the index is not within
     /// [0, 2^31 - 1].
     ///
     /// [`Normal`]: #variant.Normal
@@ -155,7 +138,7 @@ impl ChildNumber {
         }
     }
 
-    /// Constructs a new [`Hardened`] from an index, returns an error if the index is not within
+    /// Create a [`Hardened`] from an index, returns an error if the index is not within
     /// [0, 2^31 - 1].
     ///
     /// [`Hardened`]: #variant.Hardened
@@ -265,7 +248,7 @@ impl serde::Serialize for ChildNumber {
 /// Trait that allows possibly failable conversion from a type into a
 /// derivation path
 pub trait IntoDerivationPath {
-    /// Converts a given type into a [`DerivationPath`] with possible error
+    /// Convers a given type into a [`DerivationPath`] with possible error
     fn into_derivation_path(self) -> Result<DerivationPath, Error>;
 }
 
@@ -274,7 +257,7 @@ pub trait IntoDerivationPath {
 pub struct DerivationPath(Vec<ChildNumber>);
 
 #[cfg(feature = "serde")]
-internals::serde_string_impl!(DerivationPath, "a BIP-32 derivation path");
+crate::serde_utils::serde_string_impl!(DerivationPath, "a BIP-32 derivation path");
 
 impl<I> Index<I> for DerivationPath
 where
@@ -301,7 +284,7 @@ impl IntoDerivationPath for String {
     fn into_derivation_path(self) -> Result<DerivationPath, Error> { self.parse() }
 }
 
-impl IntoDerivationPath for &'_ str {
+impl<'a> IntoDerivationPath for &'a str {
     fn into_derivation_path(self) -> Result<DerivationPath, Error> { self.parse() }
 }
 
@@ -340,13 +323,12 @@ impl FromStr for DerivationPath {
     type Err = Error;
 
     fn from_str(path: &str) -> Result<DerivationPath, Error> {
-        if path.is_empty() || path == "m" || path == "m/" {
-            return Ok(vec![].into());
+        let mut parts = path.split('/');
+        // First parts must be `m`.
+        if parts.next().unwrap() != "m" {
+            return Err(Error::InvalidDerivationPathFormat);
         }
 
-        let path = path.strip_prefix("m/").unwrap_or(path);
-
-        let parts = path.split('/');
         let ret: Result<Vec<ChildNumber>, Error> = parts.map(str::parse).collect();
         Ok(DerivationPath(ret?))
     }
@@ -368,7 +350,7 @@ impl<'a> DerivationPathIterator<'a> {
     }
 }
 
-impl Iterator for DerivationPathIterator<'_> {
+impl<'a> Iterator for DerivationPathIterator<'a> {
     type Item = DerivationPath;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -392,7 +374,7 @@ impl DerivationPath {
     /// is empty). True for `m` path.
     pub fn is_master(&self) -> bool { self.0.is_empty() }
 
-    /// Constructs a new [DerivationPath] that is a child of this one.
+    /// Create a new [DerivationPath] that is a child of this one.
     pub fn child(&self, cn: ChildNumber) -> DerivationPath {
         let mut path = self.0.clone();
         path.push(cn);
@@ -426,13 +408,14 @@ impl DerivationPath {
     ///
     /// ```
     /// use bitcoin::bip32::{DerivationPath, ChildNumber};
+    /// use std::str::FromStr;
     ///
-    /// let base = "m/42".parse::<DerivationPath>().unwrap();
+    /// let base = DerivationPath::from_str("m/42").unwrap();
     ///
-    /// let deriv_1 = base.extend("0/1".parse::<DerivationPath>().unwrap());
+    /// let deriv_1 = base.extend(DerivationPath::from_str("m/0/1").unwrap());
     /// let deriv_2 = base.extend(&[
-    ///     ChildNumber::ZERO_NORMAL,
-    ///     ChildNumber::ONE_NORMAL
+    ///     ChildNumber::from_normal_idx(0).unwrap(),
+    ///     ChildNumber::from_normal_idx(1).unwrap()
     /// ]);
     ///
     /// assert_eq!(deriv_1, deriv_2);
@@ -449,36 +432,21 @@ impl DerivationPath {
     ///
     /// ```
     /// use bitcoin::bip32::DerivationPath;
+    /// use std::str::FromStr;
     ///
-    /// let path = "m/84'/0'/0'/0/1".parse::<DerivationPath>().unwrap();
+    /// let path = DerivationPath::from_str("m/84'/0'/0'/0/1").unwrap();
     /// const HARDENED: u32 = 0x80000000;
     /// assert_eq!(path.to_u32_vec(), vec![84 + HARDENED, HARDENED, HARDENED, 0, 1]);
     /// ```
     pub fn to_u32_vec(&self) -> Vec<u32> { self.into_iter().map(|&el| el.into()).collect() }
-
-    /// Constructs a new derivation path from a slice of u32s.
-    /// ```
-    /// use bitcoin::bip32::DerivationPath;
-    ///
-    /// const HARDENED: u32 = 0x80000000;
-    /// let expected = vec![84 + HARDENED, HARDENED, HARDENED, 0, 1];
-    /// let path = DerivationPath::from_u32_slice(expected.as_slice());
-    /// assert_eq!(path.to_u32_vec(), expected);
-    /// ```
-    pub fn from_u32_slice(numbers: &[u32]) -> Self {
-        numbers.iter().map(|&n| ChildNumber::from(n)).collect()
-    }
 }
 
 impl fmt::Display for DerivationPath {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut iter = self.0.iter();
-        if let Some(first_element) = iter.next() {
-            write!(f, "{}", first_element)?;
-        }
-        for cn in iter {
+        f.write_str("m")?;
+        for cn in self.0.iter() {
             f.write_str("/")?;
-            write!(f, "{}", cn)?;
+            fmt::Display::fmt(cn, f)?;
         }
         Ok(())
     }
@@ -516,12 +484,6 @@ pub enum Error {
     Hex(hex::HexToArrayError),
     /// `PublicKey` hex should be 66 or 130 digits long.
     InvalidPublicKeyHexLength(usize),
-    /// Base58 decoded data was an invalid length.
-    InvalidBase58PayloadLength(InvalidBase58PayloadLengthError),
-}
-
-impl From<Infallible> for Error {
-    fn from(never: Infallible) -> Self { match never {} }
 }
 
 impl fmt::Display for Error {
@@ -543,7 +505,6 @@ impl fmt::Display for Error {
             Hex(ref e) => write_err!(f, "Hexadecimal decoding error"; e),
             InvalidPublicKeyHexLength(got) =>
                 write!(f, "PublicKey hex should be 66 or 130 digits long, got: {}", got),
-            InvalidBase58PayloadLength(ref e) => write_err!(f, "base58 payload"; e),
         }
     }
 }
@@ -557,7 +518,6 @@ impl std::error::Error for Error {
             Secp256k1(ref e) => Some(e),
             Base58(ref e) => Some(e),
             Hex(ref e) => Some(e),
-            InvalidBase58PayloadLength(ref e) => Some(e),
             CannotDeriveFromHardenedKey
             | InvalidChildNumber(_)
             | InvalidChildNumberFormat
@@ -565,6 +525,18 @@ impl std::error::Error for Error {
             | UnknownVersion(_)
             | WrongExtendedKeyLength(_)
             | InvalidPublicKeyHexLength(_) => None,
+        }
+    }
+}
+
+impl From<key::Error> for Error {
+    fn from(err: key::Error) -> Self {
+        match err {
+            key::Error::Base58(e) => Error::Base58(e),
+            key::Error::Secp256k1(e) => Error::Secp256k1(e),
+            key::Error::InvalidKeyPrefix(_) => Error::Secp256k1(secp256k1::Error::InvalidPublicKey),
+            key::Error::Hex(e) => Error::Hex(e),
+            key::Error::InvalidHexLength(got) => Error::InvalidPublicKeyHexLength(got),
         }
     }
 }
@@ -577,77 +549,56 @@ impl From<base58::Error> for Error {
     fn from(err: base58::Error) -> Self { Error::Base58(err) }
 }
 
-impl From<InvalidBase58PayloadLengthError> for Error {
-    fn from(e: InvalidBase58PayloadLengthError) -> Error { Self::InvalidBase58PayloadLength(e) }
-}
-
 impl Xpriv {
-    /// Constructs a new master key from a seed value
-    pub fn new_master(network: impl Into<NetworkKind>, seed: &[u8]) -> Result<Xpriv, Error> {
+    /// Construct a new master key from a seed value
+    pub fn new_master(network: Network, seed: &[u8]) -> Result<Xpriv, Error> {
         let mut hmac_engine: HmacEngine<sha512::Hash> = HmacEngine::new(b"Bitcoin seed");
         hmac_engine.input(seed);
         let hmac_result: Hmac<sha512::Hash> = Hmac::from_engine(hmac_engine);
 
         Ok(Xpriv {
-            network: network.into(),
+            network,
             depth: 0,
             parent_fingerprint: Default::default(),
-            child_number: ChildNumber::ZERO_NORMAL,
-            private_key: secp256k1::SecretKey::from_slice(&hmac_result.as_ref()[..32])?,
+            child_number: ChildNumber::from_normal_idx(0)?,
+            private_key: secp256k1::SecretKey::from_slice(&hmac_result[..32])?,
             chain_code: ChainCode::from_hmac(hmac_result),
         })
     }
 
-    /// Constructs a new ECDSA compressed private key matching internal secret key representation.
-    #[deprecated(since = "TBD", note = "use `to_private_key()` instead")]
-    pub fn to_priv(self) -> PrivateKey { self.to_private_key() }
-
-    /// Constructs a new ECDSA compressed private key matching internal secret key representation.
-    pub fn to_private_key(self) -> PrivateKey {
+    /// Constructs ECDSA compressed private key matching internal secret key representation.
+    pub fn to_priv(self) -> PrivateKey {
         PrivateKey { compressed: true, network: self.network, inner: self.private_key }
     }
 
-    /// Constructs a new extended public key from this extended private key.
-    pub fn to_xpub<C: secp256k1::Signing>(self, secp: &Secp256k1<C>) -> Xpub {
-        Xpub::from_xpriv(secp, &self)
-    }
-
-    /// Constructs a new BIP340 keypair for Schnorr signatures and Taproot use matching the internal
+    /// Constructs BIP340 keypair for Schnorr signatures and Taproot use matching the internal
     /// secret key representation.
     pub fn to_keypair<C: secp256k1::Signing>(self, secp: &Secp256k1<C>) -> Keypair {
         Keypair::from_seckey_slice(secp, &self.private_key[..])
             .expect("BIP32 internal private key representation is broken")
     }
 
-    /// Derives an extended private key from a path.
+    /// Attempts to derive an extended private key from a path.
     ///
     /// The `path` argument can be both of type `DerivationPath` or `Vec<ChildNumber>`.
-    #[deprecated(since = "TBD", note = "use `derive_xpriv()` instead")]
     pub fn derive_priv<C: secp256k1::Signing, P: AsRef<[ChildNumber]>>(
         &self,
         secp: &Secp256k1<C>,
         path: &P,
-    ) -> Xpriv {
-        self.derive_xpriv(secp, path)
-    }
-
-    /// Derives an extended private key from a path.
-    ///
-    /// The `path` argument can be both of type `DerivationPath` or `Vec<ChildNumber>`.
-    pub fn derive_xpriv<C: secp256k1::Signing, P: AsRef<[ChildNumber]>>(
-        &self,
-        secp: &Secp256k1<C>,
-        path: &P,
-    ) -> Xpriv {
+    ) -> Result<Xpriv, Error> {
         let mut sk: Xpriv = *self;
         for cnum in path.as_ref() {
-            sk = sk.ckd_priv(secp, *cnum)
+            sk = sk.ckd_priv(secp, *cnum)?;
         }
-        sk
+        Ok(sk)
     }
 
     /// Private->Private child key derivation
-    fn ckd_priv<C: secp256k1::Signing>(&self, secp: &Secp256k1<C>, i: ChildNumber) -> Xpriv {
+    fn ckd_priv<C: secp256k1::Signing>(
+        &self,
+        secp: &Secp256k1<C>,
+        i: ChildNumber,
+    ) -> Result<Xpriv, Error> {
         let mut hmac_engine: HmacEngine<sha512::Hash> = HmacEngine::new(&self.chain_code[..]);
         match i {
             ChildNumber::Normal { .. } => {
@@ -665,19 +616,19 @@ impl Xpriv {
 
         hmac_engine.input(&u32::from(i).to_be_bytes());
         let hmac_result: Hmac<sha512::Hash> = Hmac::from_engine(hmac_engine);
-        let sk = secp256k1::SecretKey::from_slice(&hmac_result.as_ref()[..32])
+        let sk = secp256k1::SecretKey::from_slice(&hmac_result[..32])
             .expect("statistically impossible to hit");
         let tweaked =
             sk.add_tweak(&self.private_key.into()).expect("statistically impossible to hit");
 
-        Xpriv {
+        Ok(Xpriv {
             network: self.network,
             depth: self.depth + 1,
             parent_fingerprint: self.fingerprint(secp),
             child_number: i,
             private_key: tweaked,
             chain_code: ChainCode::from_hmac(hmac_result),
-        }
+        })
     }
 
     /// Decoding extended private key from binary data according to BIP 32
@@ -687,9 +638,9 @@ impl Xpriv {
         }
 
         let network = if data.starts_with(&VERSION_BYTES_MAINNET_PRIVATE) {
-            NetworkKind::Main
+            Network::Bitcoin
         } else if data.starts_with(&VERSION_BYTES_TESTNETS_PRIVATE) {
-            NetworkKind::Test
+            Network::Testnet
         } else {
             let (b0, b1, b2, b3) = (data[0], data[1], data[2], data[3]);
             return Err(Error::UnknownVersion([b0, b1, b2, b3]));
@@ -713,8 +664,8 @@ impl Xpriv {
     pub fn encode(&self) -> [u8; 78] {
         let mut ret = [0; 78];
         ret[0..4].copy_from_slice(&match self.network {
-            NetworkKind::Main => VERSION_BYTES_MAINNET_PRIVATE,
-            NetworkKind::Test => VERSION_BYTES_TESTNETS_PRIVATE,
+            Network::Bitcoin => VERSION_BYTES_MAINNET_PRIVATE,
+            Network::Testnet | Network::Signet | Network::Regtest => VERSION_BYTES_TESTNETS_PRIVATE,
         });
         ret[4] = self.depth;
         ret[5..9].copy_from_slice(&self.parent_fingerprint[..]);
@@ -727,66 +678,39 @@ impl Xpriv {
 
     /// Returns the HASH160 of the public key belonging to the xpriv
     pub fn identifier<C: secp256k1::Signing>(&self, secp: &Secp256k1<C>) -> XKeyIdentifier {
-        Xpub::from_xpriv(secp, self).identifier()
+        Xpub::from_priv(secp, self).identifier()
     }
 
     /// Returns the first four bytes of the identifier
     pub fn fingerprint<C: secp256k1::Signing>(&self, secp: &Secp256k1<C>) -> Fingerprint {
-        self.identifier(secp).as_byte_array()[0..4].try_into().expect("4 is the fingerprint length")
+        self.identifier(secp)[0..4].try_into().expect("4 is the fingerprint length")
     }
 }
 
 impl Xpub {
-    /// Constructs a new extended public key from an extended private key.
-    #[deprecated(since = "TBD", note = "use `from_xpriv()` instead")]
+    /// Derives a public key from a private key
     pub fn from_priv<C: secp256k1::Signing>(secp: &Secp256k1<C>, sk: &Xpriv) -> Xpub {
-        Self::from_xpriv(secp, sk)
-    }
-
-    /// Constructs a new extended public key from an extended private key.
-    pub fn from_xpriv<C: secp256k1::Signing>(secp: &Secp256k1<C>, xpriv: &Xpriv) -> Xpub {
         Xpub {
-            network: xpriv.network,
-            depth: xpriv.depth,
-            parent_fingerprint: xpriv.parent_fingerprint,
-            child_number: xpriv.child_number,
-            public_key: secp256k1::PublicKey::from_secret_key(secp, &xpriv.private_key),
-            chain_code: xpriv.chain_code,
+            network: sk.network,
+            depth: sk.depth,
+            parent_fingerprint: sk.parent_fingerprint,
+            child_number: sk.child_number,
+            public_key: secp256k1::PublicKey::from_secret_key(secp, &sk.private_key),
+            chain_code: sk.chain_code,
         }
     }
 
-    /// Constructs a new ECDSA compressed public key matching internal public key representation.
-    #[deprecated(since = "TBD", note = "use `to_public_key()` instead")]
-    pub fn to_pub(self) -> CompressedPublicKey { self.to_public_key() }
+    /// Constructs ECDSA compressed public key matching internal public key representation.
+    pub fn to_pub(self) -> PublicKey { PublicKey { compressed: true, inner: self.public_key } }
 
-    /// Constructs a new ECDSA compressed public key matching internal public key representation.
-    pub fn to_public_key(self) -> CompressedPublicKey { CompressedPublicKey(self.public_key) }
-
-    /// Constructs a new BIP340 x-only public key for BIP-340 signatures and Taproot use matching
+    /// Constructs BIP340 x-only public key for BIP-340 signatures and Taproot use matching
     /// the internal public key representation.
-    #[deprecated(since = "TBD", note = "use `to_x_only_public_key()` instead")]
-    pub fn to_x_only_pub(self) -> XOnlyPublicKey { self.to_x_only_public_key() }
-
-    /// Constructs a new BIP340 x-only public key for BIP-340 signatures and Taproot use matching
-    /// the internal public key representation.
-    pub fn to_x_only_public_key(self) -> XOnlyPublicKey { XOnlyPublicKey::from(self.public_key) }
+    pub fn to_x_only_pub(self) -> XOnlyPublicKey { XOnlyPublicKey::from(self.public_key) }
 
     /// Attempts to derive an extended public key from a path.
     ///
     /// The `path` argument can be any type implementing `AsRef<ChildNumber>`, such as `DerivationPath`, for instance.
-    #[deprecated(since = "TBD", note = "use `derive_xpub()` instead")]
     pub fn derive_pub<C: secp256k1::Verification, P: AsRef<[ChildNumber]>>(
-        &self,
-        secp: &Secp256k1<C>,
-        path: &P,
-    ) -> Result<Xpub, Error> {
-        self.derive_xpub(secp, path)
-    }
-
-    /// Attempts to derive an extended public key from a path.
-    ///
-    /// The `path` argument can be any type implementing `AsRef<ChildNumber>`, such as `DerivationPath`, for instance.
-    pub fn derive_xpub<C: secp256k1::Verification, P: AsRef<[ChildNumber]>>(
         &self,
         secp: &Secp256k1<C>,
         path: &P,
@@ -813,7 +737,7 @@ impl Xpub {
 
                 let hmac_result: Hmac<sha512::Hash> = Hmac::from_engine(hmac_engine);
 
-                let private_key = secp256k1::SecretKey::from_slice(&hmac_result.as_ref()[..32])?;
+                let private_key = secp256k1::SecretKey::from_slice(&hmac_result[..32])?;
                 let chain_code = ChainCode::from_hmac(hmac_result);
                 Ok((private_key, chain_code))
             }
@@ -846,9 +770,9 @@ impl Xpub {
         }
 
         let network = if data.starts_with(&VERSION_BYTES_MAINNET_PUBLIC) {
-            NetworkKind::Main
+            Network::Bitcoin
         } else if data.starts_with(&VERSION_BYTES_TESTNETS_PUBLIC) {
-            NetworkKind::Test
+            Network::Testnet
         } else {
             let (b0, b1, b2, b3) = (data[0], data[1], data[2], data[3]);
             return Err(Error::UnknownVersion([b0, b1, b2, b3]));
@@ -872,8 +796,8 @@ impl Xpub {
     pub fn encode(&self) -> [u8; 78] {
         let mut ret = [0; 78];
         ret[0..4].copy_from_slice(&match self.network {
-            NetworkKind::Main => VERSION_BYTES_MAINNET_PUBLIC,
-            NetworkKind::Test => VERSION_BYTES_TESTNETS_PUBLIC,
+            Network::Bitcoin => VERSION_BYTES_MAINNET_PUBLIC,
+            Network::Testnet | Network::Signet | Network::Regtest => VERSION_BYTES_TESTNETS_PUBLIC,
         });
         ret[4] = self.depth;
         ret[5..9].copy_from_slice(&self.parent_fingerprint[..]);
@@ -883,14 +807,16 @@ impl Xpub {
         ret
     }
 
-    /// Returns the HASH160 of the public key component of the xpub
+    /// Returns the HASH160 of the chaincode
     pub fn identifier(&self) -> XKeyIdentifier {
-        XKeyIdentifier(hash160::Hash::hash(&self.public_key.serialize()))
+        let mut engine = XKeyIdentifier::engine();
+        engine.write_all(&self.public_key.serialize()).expect("engines don't error");
+        XKeyIdentifier::from_engine(engine)
     }
 
     /// Returns the first four bytes of the identifier
     pub fn fingerprint(&self) -> Fingerprint {
-        self.identifier().as_byte_array()[0..4].try_into().expect("4 is the fingerprint length")
+        self.identifier()[0..4].try_into().expect("4 is the fingerprint length")
     }
 }
 
@@ -907,7 +833,7 @@ impl FromStr for Xpriv {
         let data = base58::decode_check(inp)?;
 
         if data.len() != 78 {
-            return Err(InvalidBase58PayloadLengthError { length: data.len() }.into());
+            return Err(base58::Error::InvalidLength(data.len()).into());
         }
 
         Xpriv::decode(&data)
@@ -927,7 +853,7 @@ impl FromStr for Xpub {
         let data = base58::decode_check(inp)?;
 
         if data.len() != 78 {
-            return Err(InvalidBase58PayloadLengthError { length: data.len() }.into());
+            return Err(base58::Error::InvalidLength(data.len()).into());
         }
 
         Xpub::decode(&data)
@@ -942,148 +868,128 @@ impl From<&Xpub> for XKeyIdentifier {
     fn from(key: &Xpub) -> XKeyIdentifier { key.identifier() }
 }
 
-/// Decoded base58 data was an invalid length.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InvalidBase58PayloadLengthError {
-    /// The base58 payload length we got after decoding xpriv/xpub string.
-    pub(crate) length: usize,
-}
-
-impl InvalidBase58PayloadLengthError {
-    /// Returns the invalid payload length.
-    pub fn invalid_base58_payload_length(&self) -> usize { self.length }
-}
-
-impl fmt::Display for InvalidBase58PayloadLengthError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "decoded base58 xpriv/xpub data was an invalid length: {} (expected 78)",
-            self.length
-        )
-    }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for InvalidBase58PayloadLengthError {}
-
 #[cfg(test)]
 mod tests {
+    use core::str::FromStr;
+
     use hex::test_hex_unwrap as hex;
-    #[cfg(feature = "serde")]
-    use internals::serde_round_trip;
+    use secp256k1::{self, Secp256k1};
 
     use super::ChildNumber::{Hardened, Normal};
     use super::*;
+    use crate::network::Network::{self, Bitcoin};
 
     #[test]
-    fn parse_derivation_path() {
-        assert_eq!("n/0'/0".parse::<DerivationPath>(), Err(Error::InvalidChildNumberFormat));
-        assert_eq!("4/m/5".parse::<DerivationPath>(), Err(Error::InvalidChildNumberFormat));
-        assert_eq!("//3/0'".parse::<DerivationPath>(), Err(Error::InvalidChildNumberFormat));
-        assert_eq!("0h/0x".parse::<DerivationPath>(), Err(Error::InvalidChildNumberFormat));
+    fn test_parse_derivation_path() {
+        assert_eq!(DerivationPath::from_str("42"), Err(Error::InvalidDerivationPathFormat));
+        assert_eq!(DerivationPath::from_str("n/0'/0"), Err(Error::InvalidDerivationPathFormat));
+        assert_eq!(DerivationPath::from_str("4/m/5"), Err(Error::InvalidDerivationPathFormat));
+        assert_eq!(DerivationPath::from_str("m//3/0'"), Err(Error::InvalidChildNumberFormat));
+        assert_eq!(DerivationPath::from_str("m/0h/0x"), Err(Error::InvalidChildNumberFormat));
         assert_eq!(
-            "2147483648".parse::<DerivationPath>(),
+            DerivationPath::from_str("m/2147483648"),
             Err(Error::InvalidChildNumber(2147483648))
         );
 
-        assert_eq!(DerivationPath::master(), "".parse::<DerivationPath>().unwrap());
+        assert_eq!(DerivationPath::master(), DerivationPath::from_str("m").unwrap());
         assert_eq!(DerivationPath::master(), DerivationPath::default());
-
-        // Acceptable forms for a master path.
-        assert_eq!("m".parse::<DerivationPath>().unwrap(), DerivationPath(vec![]));
-        assert_eq!("m/".parse::<DerivationPath>().unwrap(), DerivationPath(vec![]));
-        assert_eq!("".parse::<DerivationPath>().unwrap(), DerivationPath(vec![]));
-
-        assert_eq!("0'".parse::<DerivationPath>(), Ok(vec![ChildNumber::ZERO_HARDENED].into()));
+        assert_eq!(DerivationPath::from_str("m"), Ok(vec![].into()));
         assert_eq!(
-            "0'/1".parse::<DerivationPath>(),
-            Ok(vec![ChildNumber::ZERO_HARDENED, ChildNumber::ONE_NORMAL].into())
+            DerivationPath::from_str("m/0'"),
+            Ok(vec![ChildNumber::from_hardened_idx(0).unwrap()].into())
         );
         assert_eq!(
-            "0h/1/2'".parse::<DerivationPath>(),
+            DerivationPath::from_str("m/0'/1"),
             Ok(vec![
-                ChildNumber::ZERO_HARDENED,
-                ChildNumber::ONE_NORMAL,
+                ChildNumber::from_hardened_idx(0).unwrap(),
+                ChildNumber::from_normal_idx(1).unwrap()
+            ]
+            .into())
+        );
+        assert_eq!(
+            DerivationPath::from_str("m/0h/1/2'"),
+            Ok(vec![
+                ChildNumber::from_hardened_idx(0).unwrap(),
+                ChildNumber::from_normal_idx(1).unwrap(),
                 ChildNumber::from_hardened_idx(2).unwrap(),
             ]
             .into())
         );
         assert_eq!(
-            "0'/1/2h/2".parse::<DerivationPath>(),
+            DerivationPath::from_str("m/0'/1/2h/2"),
             Ok(vec![
-                ChildNumber::ZERO_HARDENED,
-                ChildNumber::ONE_NORMAL,
+                ChildNumber::from_hardened_idx(0).unwrap(),
+                ChildNumber::from_normal_idx(1).unwrap(),
                 ChildNumber::from_hardened_idx(2).unwrap(),
                 ChildNumber::from_normal_idx(2).unwrap(),
             ]
             .into())
         );
-        let want = DerivationPath::from(vec![
-            ChildNumber::ZERO_HARDENED,
-            ChildNumber::ONE_NORMAL,
-            ChildNumber::from_hardened_idx(2).unwrap(),
-            ChildNumber::from_normal_idx(2).unwrap(),
-            ChildNumber::from_normal_idx(1000000000).unwrap(),
-        ]);
-        assert_eq!("0'/1/2'/2/1000000000".parse::<DerivationPath>().unwrap(), want);
-        assert_eq!("m/0'/1/2'/2/1000000000".parse::<DerivationPath>().unwrap(), want);
-
-        let s = "0'/50/3'/5/545456";
-        assert_eq!(s.parse::<DerivationPath>(), s.into_derivation_path());
-        assert_eq!(s.parse::<DerivationPath>(), s.to_string().into_derivation_path());
-
+        assert_eq!(
+            DerivationPath::from_str("m/0'/1/2'/2/1000000000"),
+            Ok(vec![
+                ChildNumber::from_hardened_idx(0).unwrap(),
+                ChildNumber::from_normal_idx(1).unwrap(),
+                ChildNumber::from_hardened_idx(2).unwrap(),
+                ChildNumber::from_normal_idx(2).unwrap(),
+                ChildNumber::from_normal_idx(1000000000).unwrap(),
+            ]
+            .into())
+        );
         let s = "m/0'/50/3'/5/545456";
-        assert_eq!(s.parse::<DerivationPath>(), s.into_derivation_path());
-        assert_eq!(s.parse::<DerivationPath>(), s.to_string().into_derivation_path());
+        assert_eq!(DerivationPath::from_str(s), s.into_derivation_path());
+        assert_eq!(DerivationPath::from_str(s), s.to_string().into_derivation_path());
     }
 
     #[test]
-    fn derivation_path_conversion_index() {
-        let path = "0h/1/2'".parse::<DerivationPath>().unwrap();
+    fn test_derivation_path_conversion_index() {
+        let path = DerivationPath::from_str("m/0h/1/2'").unwrap();
         let numbers: Vec<ChildNumber> = path.clone().into();
         let path2: DerivationPath = numbers.into();
         assert_eq!(path, path2);
-        assert_eq!(&path[..2], &[ChildNumber::ZERO_HARDENED, ChildNumber::ONE_NORMAL]);
+        assert_eq!(
+            &path[..2],
+            &[ChildNumber::from_hardened_idx(0).unwrap(), ChildNumber::from_normal_idx(1).unwrap()]
+        );
         let indexed: DerivationPath = path[..2].into();
-        assert_eq!(indexed, "0h/1".parse::<DerivationPath>().unwrap());
+        assert_eq!(indexed, DerivationPath::from_str("m/0h/1").unwrap());
         assert_eq!(indexed.child(ChildNumber::from_hardened_idx(2).unwrap()), path);
     }
 
     fn test_path<C: secp256k1::Signing + secp256k1::Verification>(
         secp: &Secp256k1<C>,
-        network: NetworkKind,
+        network: Network,
         seed: &[u8],
         path: DerivationPath,
         expected_sk: &str,
         expected_pk: &str,
     ) {
         let mut sk = Xpriv::new_master(network, seed).unwrap();
-        let mut pk = Xpub::from_xpriv(secp, &sk);
+        let mut pk = Xpub::from_priv(secp, &sk);
 
         // Check derivation convenience method for Xpriv
-        assert_eq!(&sk.derive_xpriv(secp, &path).to_string()[..], expected_sk);
+        assert_eq!(&sk.derive_priv(secp, &path).unwrap().to_string()[..], expected_sk);
 
         // Check derivation convenience method for Xpub, should error
         // appropriately if any ChildNumber is hardened
         if path.0.iter().any(|cnum| cnum.is_hardened()) {
-            assert_eq!(pk.derive_xpub(secp, &path), Err(Error::CannotDeriveFromHardenedKey));
+            assert_eq!(pk.derive_pub(secp, &path), Err(Error::CannotDeriveFromHardenedKey));
         } else {
-            assert_eq!(&pk.derive_xpub(secp, &path).unwrap().to_string()[..], expected_pk);
+            assert_eq!(&pk.derive_pub(secp, &path).unwrap().to_string()[..], expected_pk);
         }
 
         // Derive keys, checking hardened and non-hardened derivation one-by-one
         for &num in path.0.iter() {
-            sk = sk.ckd_priv(secp, num);
+            sk = sk.ckd_priv(secp, num).unwrap();
             match num {
                 Normal { .. } => {
                     let pk2 = pk.ckd_pub(secp, num).unwrap();
-                    pk = Xpub::from_xpriv(secp, &sk);
+                    pk = Xpub::from_priv(secp, &sk);
                     assert_eq!(pk, pk2);
                 }
                 Hardened { .. } => {
                     assert_eq!(pk.ckd_pub(secp, num), Err(Error::CannotDeriveFromHardenedKey));
-                    pk = Xpub::from_xpriv(secp, &sk);
+                    pk = Xpub::from_priv(secp, &sk);
                 }
             }
         }
@@ -1092,14 +998,14 @@ mod tests {
         assert_eq!(&sk.to_string()[..], expected_sk);
         assert_eq!(&pk.to_string()[..], expected_pk);
         // Check decoded base58 against result
-        let decoded_sk = expected_sk.parse::<Xpriv>();
-        let decoded_pk = expected_pk.parse::<Xpub>();
+        let decoded_sk = Xpriv::from_str(expected_sk);
+        let decoded_pk = Xpub::from_str(expected_pk);
         assert_eq!(Ok(sk), decoded_sk);
         assert_eq!(Ok(pk), decoded_pk);
     }
 
     #[test]
-    fn increment() {
+    fn test_increment() {
         let idx = 9345497; // randomly generated, I promise
         let cn = ChildNumber::from_normal_idx(idx).unwrap();
         assert_eq!(cn.increment().ok(), Some(ChildNumber::from_normal_idx(idx + 1).unwrap()));
@@ -1113,118 +1019,118 @@ mod tests {
         assert_eq!(cn.increment().err(), Some(Error::InvalidChildNumber(1 << 31)));
 
         let cn = ChildNumber::from_normal_idx(350).unwrap();
-        let path = "42'".parse::<DerivationPath>().unwrap();
+        let path = DerivationPath::from_str("m/42'").unwrap();
         let mut iter = path.children_from(cn);
-        assert_eq!(iter.next(), Some("42'/350".parse().unwrap()));
-        assert_eq!(iter.next(), Some("42'/351".parse().unwrap()));
+        assert_eq!(iter.next(), Some("m/42'/350".parse().unwrap()));
+        assert_eq!(iter.next(), Some("m/42'/351".parse().unwrap()));
 
-        let path = "42'/350'".parse::<DerivationPath>().unwrap();
+        let path = DerivationPath::from_str("m/42'/350'").unwrap();
         let mut iter = path.normal_children();
-        assert_eq!(iter.next(), Some("42'/350'/0".parse().unwrap()));
-        assert_eq!(iter.next(), Some("42'/350'/1".parse().unwrap()));
+        assert_eq!(iter.next(), Some("m/42'/350'/0".parse().unwrap()));
+        assert_eq!(iter.next(), Some("m/42'/350'/1".parse().unwrap()));
 
-        let path = "42'/350'".parse::<DerivationPath>().unwrap();
+        let path = DerivationPath::from_str("m/42'/350'").unwrap();
         let mut iter = path.hardened_children();
-        assert_eq!(iter.next(), Some("42'/350'/0'".parse().unwrap()));
-        assert_eq!(iter.next(), Some("42'/350'/1'".parse().unwrap()));
+        assert_eq!(iter.next(), Some("m/42'/350'/0'".parse().unwrap()));
+        assert_eq!(iter.next(), Some("m/42'/350'/1'".parse().unwrap()));
 
         let cn = ChildNumber::from_hardened_idx(42350).unwrap();
-        let path = "42'".parse::<DerivationPath>().unwrap();
+        let path = DerivationPath::from_str("m/42'").unwrap();
         let mut iter = path.children_from(cn);
-        assert_eq!(iter.next(), Some("42'/42350'".parse().unwrap()));
-        assert_eq!(iter.next(), Some("42'/42351'".parse().unwrap()));
+        assert_eq!(iter.next(), Some("m/42'/42350'".parse().unwrap()));
+        assert_eq!(iter.next(), Some("m/42'/42351'".parse().unwrap()));
 
         let cn = ChildNumber::from_hardened_idx(max).unwrap();
-        let path = "42'".parse::<DerivationPath>().unwrap();
+        let path = DerivationPath::from_str("m/42'").unwrap();
         let mut iter = path.children_from(cn);
         assert!(iter.next().is_some());
         assert!(iter.next().is_none());
     }
 
     #[test]
-    fn vector_1() {
+    fn test_vector_1() {
         let secp = Secp256k1::new();
         let seed = hex!("000102030405060708090a0b0c0d0e0f");
 
         // m
-        test_path(&secp, NetworkKind::Main, &seed, "m".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m".parse().unwrap(),
                   "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi",
                   "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8");
 
         // m/0h
-        test_path(&secp, NetworkKind::Main, &seed, "m/0h".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m/0h".parse().unwrap(),
                   "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7",
                   "xpub68Gmy5EdvgibQVfPdqkBBCHxA5htiqg55crXYuXoQRKfDBFA1WEjWgP6LHhwBZeNK1VTsfTFUHCdrfp1bgwQ9xv5ski8PX9rL2dZXvgGDnw");
 
         // m/0h/1
-        test_path(&secp, NetworkKind::Main, &seed, "m/0h/1".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m/0h/1".parse().unwrap(),
                    "xprv9wTYmMFdV23N2TdNG573QoEsfRrWKQgWeibmLntzniatZvR9BmLnvSxqu53Kw1UmYPxLgboyZQaXwTCg8MSY3H2EU4pWcQDnRnrVA1xe8fs",
                    "xpub6ASuArnXKPbfEwhqN6e3mwBcDTgzisQN1wXN9BJcM47sSikHjJf3UFHKkNAWbWMiGj7Wf5uMash7SyYq527Hqck2AxYysAA7xmALppuCkwQ");
 
         // m/0h/1/2h
-        test_path(&secp, NetworkKind::Main, &seed, "m/0h/1/2h".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m/0h/1/2h".parse().unwrap(),
                   "xprv9z4pot5VBttmtdRTWfWQmoH1taj2axGVzFqSb8C9xaxKymcFzXBDptWmT7FwuEzG3ryjH4ktypQSAewRiNMjANTtpgP4mLTj34bhnZX7UiM",
                   "xpub6D4BDPcP2GT577Vvch3R8wDkScZWzQzMMUm3PWbmWvVJrZwQY4VUNgqFJPMM3No2dFDFGTsxxpG5uJh7n7epu4trkrX7x7DogT5Uv6fcLW5");
 
         // m/0h/1/2h/2
-        test_path(&secp, NetworkKind::Main, &seed, "m/0h/1/2h/2".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m/0h/1/2h/2".parse().unwrap(),
                   "xprvA2JDeKCSNNZky6uBCviVfJSKyQ1mDYahRjijr5idH2WwLsEd4Hsb2Tyh8RfQMuPh7f7RtyzTtdrbdqqsunu5Mm3wDvUAKRHSC34sJ7in334",
                   "xpub6FHa3pjLCk84BayeJxFW2SP4XRrFd1JYnxeLeU8EqN3vDfZmbqBqaGJAyiLjTAwm6ZLRQUMv1ZACTj37sR62cfN7fe5JnJ7dh8zL4fiyLHV");
 
         // m/0h/1/2h/2/1000000000
-        test_path(&secp, NetworkKind::Main, &seed, "m/0h/1/2h/2/1000000000".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m/0h/1/2h/2/1000000000".parse().unwrap(),
                   "xprvA41z7zogVVwxVSgdKUHDy1SKmdb533PjDz7J6N6mV6uS3ze1ai8FHa8kmHScGpWmj4WggLyQjgPie1rFSruoUihUZREPSL39UNdE3BBDu76",
                   "xpub6H1LXWLaKsWFhvm6RVpEL9P4KfRZSW7abD2ttkWP3SSQvnyA8FSVqNTEcYFgJS2UaFcxupHiYkro49S8yGasTvXEYBVPamhGW6cFJodrTHy");
     }
 
     #[test]
-    fn vector_2() {
+    fn test_vector_2() {
         let secp = Secp256k1::new();
         let seed = hex!("fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542");
 
         // m
-        test_path(&secp, NetworkKind::Main, &seed, "m".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m".parse().unwrap(),
                   "xprv9s21ZrQH143K31xYSDQpPDxsXRTUcvj2iNHm5NUtrGiGG5e2DtALGdso3pGz6ssrdK4PFmM8NSpSBHNqPqm55Qn3LqFtT2emdEXVYsCzC2U",
                   "xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB");
 
         // m/0
-        test_path(&secp, NetworkKind::Main, &seed, "m/0".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m/0".parse().unwrap(),
                   "xprv9vHkqa6EV4sPZHYqZznhT2NPtPCjKuDKGY38FBWLvgaDx45zo9WQRUT3dKYnjwih2yJD9mkrocEZXo1ex8G81dwSM1fwqWpWkeS3v86pgKt",
                   "xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH");
 
         // m/0/2147483647h
-        test_path(&secp, NetworkKind::Main, &seed, "m/0/2147483647h".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m/0/2147483647h".parse().unwrap(),
                   "xprv9wSp6B7kry3Vj9m1zSnLvN3xH8RdsPP1Mh7fAaR7aRLcQMKTR2vidYEeEg2mUCTAwCd6vnxVrcjfy2kRgVsFawNzmjuHc2YmYRmagcEPdU9",
                   "xpub6ASAVgeehLbnwdqV6UKMHVzgqAG8Gr6riv3Fxxpj8ksbH9ebxaEyBLZ85ySDhKiLDBrQSARLq1uNRts8RuJiHjaDMBU4Zn9h8LZNnBC5y4a");
 
         // m/0/2147483647h/1
-        test_path(&secp, NetworkKind::Main, &seed, "m/0/2147483647h/1".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m/0/2147483647h/1".parse().unwrap(),
                   "xprv9zFnWC6h2cLgpmSA46vutJzBcfJ8yaJGg8cX1e5StJh45BBciYTRXSd25UEPVuesF9yog62tGAQtHjXajPPdbRCHuWS6T8XA2ECKADdw4Ef",
                   "xpub6DF8uhdarytz3FWdA8TvFSvvAh8dP3283MY7p2V4SeE2wyWmG5mg5EwVvmdMVCQcoNJxGoWaU9DCWh89LojfZ537wTfunKau47EL2dhHKon");
 
         // m/0/2147483647h/1/2147483646h
-        test_path(&secp, NetworkKind::Main, &seed, "m/0/2147483647h/1/2147483646h".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m/0/2147483647h/1/2147483646h".parse().unwrap(),
                   "xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc",
                   "xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL");
 
         // m/0/2147483647h/1/2147483646h/2
-        test_path(&secp, NetworkKind::Main, &seed, "m/0/2147483647h/1/2147483646h/2".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m/0/2147483647h/1/2147483646h/2".parse().unwrap(),
                   "xprvA2nrNbFZABcdryreWet9Ea4LvTJcGsqrMzxHx98MMrotbir7yrKCEXw7nadnHM8Dq38EGfSh6dqA9QWTyefMLEcBYJUuekgW4BYPJcr9E7j",
                   "xpub6FnCn6nSzZAw5Tw7cgR9bi15UV96gLZhjDstkXXxvCLsUXBGXPdSnLFbdpq8p9HmGsApME5hQTZ3emM2rnY5agb9rXpVGyy3bdW6EEgAtqt");
     }
 
     #[test]
-    fn vector_3() {
+    fn test_vector_3() {
         let secp = Secp256k1::new();
         let seed = hex!("4b381541583be4423346c643850da4b320e46a87ae3d2a4e6da11eba819cd4acba45d239319ac14f863b8d5ab5a0d0c64d2e8a1e7d1457df2e5a3c51c73235be");
 
         // m
-        test_path(&secp, NetworkKind::Main, &seed, "m".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m".parse().unwrap(),
                   "xprv9s21ZrQH143K25QhxbucbDDuQ4naNntJRi4KUfWT7xo4EKsHt2QJDu7KXp1A3u7Bi1j8ph3EGsZ9Xvz9dGuVrtHHs7pXeTzjuxBrCmmhgC6",
                   "xpub661MyMwAqRbcEZVB4dScxMAdx6d4nFc9nvyvH3v4gJL378CSRZiYmhRoP7mBy6gSPSCYk6SzXPTf3ND1cZAceL7SfJ1Z3GC8vBgp2epUt13");
 
         // m/0h
-        test_path(&secp, NetworkKind::Main, &seed, "m/0h".parse().unwrap(),
+        test_path(&secp, Bitcoin, &seed, "m/0h".parse().unwrap(),
                   "xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L",
                   "xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y");
     }
@@ -1232,11 +1138,11 @@ mod tests {
     #[test]
     #[cfg(feature = "serde")]
     pub fn encode_decode_childnumber() {
-        serde_round_trip!(ChildNumber::ZERO_NORMAL);
-        serde_round_trip!(ChildNumber::ONE_NORMAL);
+        serde_round_trip!(ChildNumber::from_normal_idx(0).unwrap());
+        serde_round_trip!(ChildNumber::from_normal_idx(1).unwrap());
         serde_round_trip!(ChildNumber::from_normal_idx((1 << 31) - 1).unwrap());
-        serde_round_trip!(ChildNumber::ZERO_HARDENED);
-        serde_round_trip!(ChildNumber::ONE_HARDENED);
+        serde_round_trip!(ChildNumber::from_hardened_idx(0).unwrap());
+        serde_round_trip!(ChildNumber::from_hardened_idx(1).unwrap());
         serde_round_trip!(ChildNumber::from_hardened_idx((1 << 31) - 1).unwrap());
     }
 
@@ -1287,7 +1193,7 @@ mod tests {
         }
 
         let xpriv = Xpriv {
-            network: NetworkKind::Main,
+            network: Network::Bitcoin,
             depth: 0,
             parent_fingerprint: Default::default(),
             child_number: ChildNumber::Normal { index: 0 },
@@ -1300,7 +1206,7 @@ mod tests {
 
         // Xpriv having secret key set to all zeros
         let xpriv_str = "xprv9s21ZrQH143K24Mfq5zL5MhWK9hUhhGbd45hLXo2Pq2oqzMMo63oStZzF93Y5wvzdUayhgkkFoicQZcP3y52uPPxFnfoLZB21Teqt1VvEHx";
-        xpriv_str.parse::<Xpriv>().unwrap();
+        Xpriv::from_str(xpriv_str).unwrap();
     }
 
     #[test]
@@ -1308,6 +1214,6 @@ mod tests {
     fn schnorr_broken_privkey_ffs() {
         // Xpriv having secret key set to all 0xFF's
         let xpriv_str = "xprv9s21ZrQH143K24Mfq5zL5MhWK9hUhhGbd45hLXo2Pq2oqzMMo63oStZzFAzHGBP2UuGCqWLTAPLcMtD9y5gkZ6Eq3Rjuahrv17fENZ3QzxW";
-        xpriv_str.parse::<Xpriv>().unwrap();
+        Xpriv::from_str(xpriv_str).unwrap();
     }
 }

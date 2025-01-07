@@ -3,18 +3,18 @@
 # Check that we can publish crates in their current form if there are changes on top of the tip of
 # master that imply that we are about to do a release.
 
-set -euox pipefail
+set -ex
 
 main () {
     for crate in "internals" "hashes" "bitcoin"; do
         if release_changes $crate; then
             echo "$crate has changes implying this is a release PR, checking if we can publish ..."
 
-            # Check if there is any mention of TBD which means the
+            # Check if there is any mention of NEXT_RELEASE which means the
             # next version number should be filled in.
-            if grep -qr "since = \"TBD" ./$crate; then
+            if grep -qr NEXT.RELEASE ./$crate; then
                 echo Version number needs to be filled in following places:
-                grep -r "since = \"TBD" ./$crate
+                grep -r NEXT.RELEASE ./$crate
                 exit 1
             fi
 
@@ -28,7 +28,7 @@ main () {
 # preparation for releasing the crate.
 release_changes() {
     local crate=$1
-    git log --patch --reverse master.. -- "$crate"/Cargo.toml | grep version
+    git log --patch --reverse master.. -- $crate/Cargo.toml | grep version
 }
 
 # Do a dry run publish to crates.io using the correct package name for crate ($1).
@@ -47,4 +47,4 @@ publish_dry_run() {
 #
 # Main script.
 #
-main "$@"
+main $@

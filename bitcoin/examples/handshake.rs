@@ -1,3 +1,5 @@
+extern crate bitcoin;
+
 use std::io::{BufReader, Write};
 use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpStream};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -5,10 +7,11 @@ use std::{env, process};
 
 use bitcoin::consensus::{encode, Decodable};
 use bitcoin::p2p::{self, address, message, message_network};
+use bitcoin::secp256k1;
 use bitcoin::secp256k1::rand::Rng;
 
 fn main() {
-    // This example establishes a connection to a Bitcoin node, sends the initial
+    // This example establishes a connection to a Bitcoin node, sends the intial
     // "version" message, waits for the reply, and finally closes the connection.
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -19,7 +22,7 @@ fn main() {
     let str_address = &args[1];
 
     let address: SocketAddr = str_address.parse().unwrap_or_else(|error| {
-        eprintln!("error parsing address: {:?}", error);
+        eprintln!("Error parsing address: {:?}", error);
         process::exit(1);
     });
 
@@ -63,7 +66,7 @@ fn main() {
         }
         let _ = stream.shutdown(Shutdown::Both);
     } else {
-        eprintln!("failed to open connection");
+        eprintln!("Failed to open connection");
     }
 }
 

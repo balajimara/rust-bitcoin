@@ -7,127 +7,51 @@
 //!
 //! [BIP141]: <https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki>
 
+use core::convert::TryInto;
 use core::fmt;
-use core::convert::Infallible;
 
-use internals::array_vec::ArrayVec;
-use secp256k1::{Secp256k1, Verification};
-
-use super::witness_version::WitnessVersion;
-use super::{PushBytes, Script, WScriptHash, WitnessScriptSizeError};
-use crate::crypto::key::{CompressedPublicKey, TapTweak, TweakedPublicKey, UntweakedPublicKey};
-use crate::script::ScriptExt as _;
-use crate::taproot::TapNodeHash;
-
-/// The minimum byte size of a segregated witness program.
-pub const MIN_SIZE: usize = 2;
-
-/// The maximum byte size of a segregated witness program.
-pub const MAX_SIZE: usize = 40;
+use crate::blockdata::script::witness_version::WitnessVersion;
+use crate::blockdata::script::{PushBytes, PushBytesBuf, PushBytesErrorReport};
 
 /// The segregated witness program.
 ///
 /// The segregated witness program is technically only the program bytes _excluding_ the witness
 /// version, however we maintain length invariants on the `program` that are governed by the version
 /// number, therefore we carry the version number around along with the program bytes.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WitnessProgram {
-    /// The SegWit version associated with this witness program.
+    /// The segwit version associated with this witness program.
     version: WitnessVersion,
     /// The witness program (between 2 and 40 bytes).
-    program: ArrayVec<u8, MAX_SIZE>,
+    program: PushBytesBuf,
 }
 
 impl WitnessProgram {
-    /// Constructs a new witness program, copying the content from the given byte slice.
-    pub fn new(version: WitnessVersion, bytes: &[u8]) -> Result<Self, Error> {
+    /// Creates a new witness program.
+    pub fn new<P>(version: WitnessVersion, program: P) -> Result<Self, Error>
+    where
+        P: TryInto<PushBytesBuf>,
+        <P as TryInto<PushBytesBuf>>::Error: PushBytesErrorReport,
+    {
         use Error::*;
 
-        let program_len = bytes.len();
-        if program_len < MIN_SIZE || program_len > MAX_SIZE {
-            return Err(InvalidLength(program_len));
+        let program = program.try_into().map_err(|error| InvalidLength(error.input_len()))?;
+        if program.len() < 2 || program.len() > 40 {
+            return Err(InvalidLength(program.len()));
         }
 
-        // Specific SegWit v0 check. These addresses can never spend funds sent to them.
-        if version == WitnessVersion::V0 && (program_len != 20 && program_len != 32) {
-            return Err(InvalidSegwitV0Length(program_len));
+        // Specific segwit v0 check. These addresses can never spend funds sent to them.
+        if version == WitnessVersion::V0 && (program.len() != 20 && program.len() != 32) {
+            return Err(InvalidSegwitV0Length(program.len()));
         }
-
-        let program = ArrayVec::from_slice(bytes);
         Ok(WitnessProgram { version, program })
-    }
-
-    /// Constructs a new [`WitnessProgram`] from a 20 byte pubkey hash.
-    fn new_p2wpkh(program: [u8; 20]) -> Self {
-        WitnessProgram { version: WitnessVersion::V0, program: ArrayVec::from_slice(&program) }
-    }
-
-    /// Constructs a new [`WitnessProgram`] from a 32 byte script hash.
-    fn new_p2wsh(program: [u8; 32]) -> Self {
-        WitnessProgram { version: WitnessVersion::V0, program: ArrayVec::from_slice(&program) }
-    }
-
-    /// Constructs a new [`WitnessProgram`] from a 32 byte serialize Taproot xonly pubkey.
-    fn new_p2tr(program: [u8; 32]) -> Self {
-        WitnessProgram { version: WitnessVersion::V1, program: ArrayVec::from_slice(&program) }
-    }
-
-    /// Constructs a new [`WitnessProgram`] from `pk` for a P2WPKH output.
-    pub fn p2wpkh(pk: CompressedPublicKey) -> Self {
-        let hash = pk.wpubkey_hash();
-        WitnessProgram::new_p2wpkh(hash.to_byte_array())
-    }
-
-    /// Constructs a new [`WitnessProgram`] from `script` for a P2WSH output.
-    pub fn p2wsh(script: &Script) -> Result<Self, WitnessScriptSizeError> {
-        script.wscript_hash().map(Self::p2wsh_from_hash)
-    }
-
-    /// Constructs a new [`WitnessProgram`] from `script` for a P2WSH output.
-    pub fn p2wsh_from_hash(hash: WScriptHash) -> Self {
-        WitnessProgram::new_p2wsh(hash.to_byte_array())
-    }
-
-    /// Constructs a new pay to Taproot address from an untweaked key.
-    pub fn p2tr<C: Verification>(
-        secp: &Secp256k1<C>,
-        internal_key: UntweakedPublicKey,
-        merkle_root: Option<TapNodeHash>,
-    ) -> Self {
-        let (output_key, _parity) = internal_key.tap_tweak(secp, merkle_root);
-        let pubkey = output_key.to_inner().serialize();
-        WitnessProgram::new_p2tr(pubkey)
-    }
-
-    /// Constructs a new pay to Taproot address from a pre-tweaked output key.
-    pub fn p2tr_tweaked(output_key: TweakedPublicKey) -> Self {
-        let pubkey = output_key.to_inner().serialize();
-        WitnessProgram::new_p2tr(pubkey)
     }
 
     /// Returns the witness program version.
     pub fn version(&self) -> WitnessVersion { self.version }
 
     /// Returns the witness program.
-    pub fn program(&self) -> &PushBytes {
-        self.program
-            .as_slice()
-            .try_into()
-            .expect("witness programs are always smaller than max size of PushBytes")
-    }
-
-    /// Returns true if this witness program is for a P2WPKH output.
-    pub fn is_p2wpkh(&self) -> bool {
-        self.version == WitnessVersion::V0 && self.program.len() == 20
-    }
-
-    /// Returns true if this witness program is for a P2WPSH output.
-    pub fn is_p2wsh(&self) -> bool {
-        self.version == WitnessVersion::V0 && self.program.len() == 32
-    }
-
-    /// Returns true if this witness program is for a P2TR output.
-    pub fn is_p2tr(&self) -> bool { self.version == WitnessVersion::V1 && self.program.len() == 32 }
+    pub fn program(&self) -> &PushBytes { &self.program }
 }
 
 /// Witness program error.
@@ -138,10 +62,6 @@ pub enum Error {
     InvalidLength(usize),
     /// A v0 witness program must be either of length 20 or 32.
     InvalidSegwitV0Length(usize),
-}
-
-impl From<Infallible> for Error {
-    fn from(never: Infallible) -> Self { match never {} }
 }
 
 impl fmt::Display for Error {
@@ -165,49 +85,5 @@ impl std::error::Error for Error {
         match *self {
             InvalidLength(_) | InvalidSegwitV0Length(_) => None,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn witness_program_is_too_short() {
-        let arbitrary_bytes = [0x00; MIN_SIZE - 1];
-        assert!(WitnessProgram::new(WitnessVersion::V15, &arbitrary_bytes).is_err()); // Arbitrary version
-    }
-
-    #[test]
-    fn witness_program_is_too_long() {
-        let arbitrary_bytes = [0x00; MAX_SIZE + 1];
-        assert!(WitnessProgram::new(WitnessVersion::V15, &arbitrary_bytes).is_err()); // Arbitrary version
-    }
-
-    #[test]
-    fn valid_v0_witness_programs() {
-        let arbitrary_bytes = [0x00; MAX_SIZE];
-
-        for size in MIN_SIZE..=MAX_SIZE {
-            let program = WitnessProgram::new(WitnessVersion::V0, &arbitrary_bytes[..size]);
-
-            if size == 20 {
-                assert!(program.expect("valid witness program").is_p2wpkh());
-                continue;
-            }
-            if size == 32 {
-                assert!(program.expect("valid witness program").is_p2wsh());
-                continue;
-            }
-            assert!(program.is_err());
-        }
-    }
-
-    #[test]
-    fn valid_v1_witness_programs() {
-        let arbitrary_bytes = [0x00; 32];
-        assert!(WitnessProgram::new(WitnessVersion::V1, &arbitrary_bytes)
-            .expect("valid witness program")
-            .is_p2tr());
     }
 }

@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 
-# Continuously cycle over fuzz targets running each for 1 hour.
+# Continuosly cycle over fuzz targets running each for 1 hour.
 # It uses chrt SCHED_IDLE so that other process takes priority.
 #
 # For hfuzz options see https://github.com/google/honggfuzz/blob/master/docs/USAGE.md
 
-set -euo pipefail
-
+set -e
 REPO_DIR=$(git rev-parse --show-toplevel)
-# can't find the file because of the ENV var
-# shellcheck source=/dev/null
+# shellcheck source=./fuzz-util.sh
 source "$REPO_DIR/fuzz/fuzz-util.sh"
 
 while :

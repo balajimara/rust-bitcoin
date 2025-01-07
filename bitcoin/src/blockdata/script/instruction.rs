@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: CC0-1.0
 
-use internals::script::{self, PushDataLenLen};
+use core::convert::TryInto;
 
-use super::{Error, PushBytes, Script, ScriptBuf, ScriptBufExtPriv as _};
-use crate::opcodes::{self, Opcode};
+use crate::blockdata::opcodes::{self, Opcode};
+use crate::blockdata::script::{read_uint_iter, Error, PushBytes, Script, ScriptBuf, UintError};
 
 /// A "parsed opcode" which allows iterating over a [`Script`] in a more sensible way.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -14,7 +14,7 @@ pub enum Instruction<'a> {
     Op(Opcode),
 }
 
-impl Instruction<'_> {
+impl<'a> Instruction<'a> {
     /// Returns the opcode if the instruction is not a data push.
     pub fn opcode(&self) -> Option<Opcode> {
         match self {
@@ -63,27 +63,6 @@ impl Instruction<'_> {
             Instruction::PushBytes(bytes) => ScriptBuf::reserved_len_for_slice(bytes.len()),
         }
     }
-
-    /// Reads an integer from an Instruction,
-    /// returning Some(i64) for valid opcodes or pushed bytes, otherwise None
-    pub fn read_int(&self) -> Option<i64> {
-        match self {
-            Instruction::Op(op) => {
-                let v = op.to_u8();
-                match v {
-                    // OP_PUSHNUM_1 ..= OP_PUSHNUM_16
-                    0x51..=0x60 => Some(v as i64 - 0x50),
-                    // OP_PUSHNUM_NEG1
-                    0x4f => Some(-1),
-                    _ => None,
-                }
-            }
-            Instruction::PushBytes(bytes) => match bytes.read_scriptint() {
-                Ok(v) => Some(v),
-                _ => None,
-            },
-        }
-    }
 }
 
 /// Iterator over a script returning parsed opcodes.
@@ -129,9 +108,13 @@ impl<'a> Instructions<'a> {
         len: PushDataLenLen,
         min_push_len: usize,
     ) -> Option<Result<Instruction<'a>, Error>> {
-        let n = match script::read_push_data_len(&mut self.data, len) {
+        let n = match read_uint_iter(&mut self.data, len as usize) {
             Ok(n) => n,
-            Err(_) => {
+            // We do exhaustive matching to not forget to handle new variants if we extend
+            // `UintError` type.
+            // Overflow actually means early end of script (script is definitely shorter
+            // than `usize::MAX`)
+            Err(UintError::EarlyEndOfScript) | Err(UintError::NumericOverflow) => {
                 self.kill();
                 return Some(Err(Error::EarlyEndOfScript));
             }
@@ -147,6 +130,15 @@ impl<'a> Instructions<'a> {
             .map(Instruction::PushBytes);
         Some(result)
     }
+}
+
+/// Allowed length of push data length.
+///
+/// This makes it easier to prove correctness of `next_push_data_len`.
+pub(super) enum PushDataLenLen {
+    One = 1,
+    Two = 2,
+    Four = 4,
 }
 
 impl<'a> Iterator for Instructions<'a> {
@@ -200,7 +192,7 @@ impl<'a> Iterator for Instructions<'a> {
     }
 }
 
-impl core::iter::FusedIterator for Instructions<'_> {}
+impl<'a> core::iter::FusedIterator for Instructions<'a> {}
 
 /// Iterator over script instructions with their positions.
 ///
@@ -220,7 +212,7 @@ impl<'a> InstructionIndices<'a> {
     #[inline]
     pub fn as_script(&self) -> &'a Script { self.instructions.as_script() }
 
-    /// Constructs a new `Self` setting `pos` to 0.
+    /// Creates `Self` setting `pos` to 0.
     pub(super) fn from_instructions(instructions: Instructions<'a>) -> Self {
         InstructionIndices { instructions, pos: 0 }
     }
