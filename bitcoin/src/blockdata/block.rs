@@ -183,7 +183,7 @@ impl MerkleBranch {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(crate = "actual_serde"))]
 pub struct SignedBlockHeader {
@@ -224,7 +224,7 @@ impl Encodable for SignedBlockHeader {
 impl Decodable for SignedBlockHeader {
     fn consensus_decode_from_finite_reader<R: std::io::Read + ?Sized>(
         reader: &mut R,
-    ) -> Result<Self, chroma::consensus::encode::Error> {
+    ) -> Result<Self, encode::Error> {
         Ok(Self {
             version: Decodable::consensus_decode_from_finite_reader(reader)?,
             block_time: Decodable::consensus_decode_from_finite_reader(reader)?,
@@ -248,7 +248,7 @@ impl_consensus_encoding!(SignedBlock, header, vtx);
 
 impl SignedBlock {
     pub fn block_hash(&self) -> BlockHash {
-        self.header.block_hash();
+        self.header.block_hash()
     }    
 }
 
