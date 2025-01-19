@@ -251,7 +251,7 @@ impl SignedBlockHeader {
         engine.input(self.merkle_root.as_byte_array());
         engine.input(&self.current_fee.to_le_bytes());
         BlockHash::from_byte_array(sha256d::Hash::from_engine(engine).to_byte_array())
-    }    
+    }
 }
 
 /// Bitcoin block version number.

@@ -26,6 +26,7 @@ use std::collections::BTreeMap;
 
 use bincode::serialize;
 use bitcoin::bip32::{ChildNumber, KeySource, Xpriv, Xpub};
+use bitcoin::blockdata::transaction::TxidExt;
 use bitcoin::consensus::encode::deserialize;
 use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d};
 use bitcoin::hex::FromHex;
@@ -40,7 +41,6 @@ use bitcoin::{
     ecdsa, transaction, Address, Amount, Block, NetworkKind, OutPoint, PrivateKey, PublicKey,
     ScriptBuf, Sequence, Target, Transaction, TxIn, TxOut, Txid, Work,
 };
-use bitcoin::blockdata::transaction::TxidExt;
 
 /// Implicitly does regression test for `BlockHeader` also.
 #[test]
