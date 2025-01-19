@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use bitcoin::bip32::{Fingerprint, IntoDerivationPath, KeySource, Xpriv, Xpub};
+use bitcoin::blockdata::transaction::TxidExt;
 use bitcoin::consensus::encode::{deserialize, serialize_hex};
 use bitcoin::hex::FromHex;
 use bitcoin::opcodes::OP_0;
@@ -12,9 +13,8 @@ use bitcoin::script::{PushBytes, ScriptBufExt as _};
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{
     absolute, script, transaction, Amount, Denomination, NetworkKind, OutPoint, PrivateKey,
-    PublicKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness, Txid
+    PublicKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
 };
-use bitcoin::blockdata::transaction::TxidExt;
 
 #[track_caller]
 fn hex_psbt(s: &str) -> Psbt {

@@ -7,8 +7,8 @@
 //! module describes structures and functions needed to describe
 //! these blocks and the blockchain.
 
-use core::fmt;
 use core::convert::Infallible;
+use core::fmt;
 
 use hashes::{sha256d, HashEngine};
 use internals::{compact_size, ToU64};
@@ -34,8 +34,16 @@ pub use units::block::{BlockHeight, BlockInterval, TooBigForRelativeBlockHeightE
 impl_hashencode!(BlockHash);
 
 impl_consensus_encoding!(Header, version, prev_blockhash, merkle_root, time, bits, nonce);
-impl_consensus_encoding!(SignedBlockHeader, version, block_time, block_height, mined_block_index, prev_block_hash, merkle_root, current_fee);
-
+impl_consensus_encoding!(
+    SignedBlockHeader,
+    version,
+    block_time,
+    block_height,
+    mined_block_index,
+    prev_block_hash,
+    merkle_root,
+    current_fee
+);
 
 crate::internal_macros::define_extension_trait! {
     /// Extension functionality for the [`Header`] type.

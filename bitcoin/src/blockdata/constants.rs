@@ -9,6 +9,7 @@
 use hashes::sha256d;
 
 use crate::block::{self, Block, Checked};
+use crate::blockdata::transaction::TxidExt;
 use crate::internal_macros::{impl_array_newtype, impl_array_newtype_stringify};
 use crate::locktime::absolute;
 use crate::network::{Network, Params};
@@ -17,7 +18,6 @@ use crate::pow::CompactTarget;
 use crate::transaction::{self, OutPoint, Transaction, TxIn, TxOut, Txid};
 use crate::witness::Witness;
 use crate::{script, Amount, BlockHash, Sequence, TestnetVersion};
-use crate::blockdata::transaction::TxidExt;
 
 /// How many seconds between blocks we expect on average.
 pub const TARGET_BLOCK_SPACING: u32 = 600;

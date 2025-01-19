@@ -4,8 +4,8 @@
 //!
 //! Implementation of compact blocks data structure and algorithms.
 
-use core::{convert, fmt, mem};
 use core::convert::Infallible;
+use core::{convert, fmt, mem};
 #[cfg(feature = "std")]
 use std::error;
 
@@ -408,6 +408,7 @@ mod test {
     use hex::FromHex;
 
     use super::*;
+    use crate::blockdata::transaction::TxidExt;
     use crate::consensus::encode::{deserialize, serialize};
     use crate::locktime::absolute;
     use crate::merkle_tree::TxMerkleNode;
@@ -416,7 +417,6 @@ mod test {
         transaction, Amount, BlockChecked, CompactTarget, OutPoint, ScriptBuf, Sequence, TxIn,
         TxOut, Txid, Witness,
     };
-    use crate::blockdata::transaction::TxidExt;
 
     fn dummy_tx(nonce: &[u8]) -> Transaction {
         let dummy_txid = Txid::from_byte_array(hashes::sha256::Hash::hash(nonce).to_byte_array());

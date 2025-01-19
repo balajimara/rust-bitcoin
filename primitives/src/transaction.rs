@@ -95,18 +95,18 @@ use crate::witness::Witness;
 pub struct Transaction {
     /// The protocol version, is currently expected to be 1, 2 (BIP 68) or 3 (BIP 431).
     pub version: Version,
-    /// Asset type 
+    /// Asset type
     pub assettype: i32,
     /// Asset Precision
     pub precision: i32,
-    /// Asset Symbol 
+    /// Asset Symbol
     pub ticker: String,
-    /// Asset name 
+    /// Asset name
     pub headline: String,
-    /// Asset hash for data 
+    /// Asset hash for data
     pub payload: Txid,
-     /// Asset data 
-     pub payloaddata: String,
+    /// Asset data
+    pub payloaddata: String,
     /// Block height or timestamp. Transaction cannot be included in a block until this height/time.
     ///
     /// ### Relevant BIPs

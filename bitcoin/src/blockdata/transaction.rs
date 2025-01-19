@@ -747,12 +747,12 @@ impl Decodable for Transaction {
         let mut payload = Txid::all_zeros();
         let mut payloaddata = "".to_string();
         if version.0 == 10 {
-           assettype = i32::consensus_decode_from_finite_reader(r)?;
-           precision = i32::consensus_decode_from_finite_reader(r)?;
-           ticker = String::consensus_decode_from_finite_reader(r)?;
-           headline = String::consensus_decode_from_finite_reader(r)?;
-           payload = Txid::consensus_decode_from_finite_reader(r)?;
-           payloaddata = String::consensus_decode_from_finite_reader(r)?;
+            assettype = i32::consensus_decode_from_finite_reader(r)?;
+            precision = i32::consensus_decode_from_finite_reader(r)?;
+            ticker = String::consensus_decode_from_finite_reader(r)?;
+            headline = String::consensus_decode_from_finite_reader(r)?;
+            payload = Txid::consensus_decode_from_finite_reader(r)?;
+            payloaddata = String::consensus_decode_from_finite_reader(r)?;
         }
         let input = Vec::<TxIn>::consensus_decode_from_finite_reader(r)?;
         // SegWit
