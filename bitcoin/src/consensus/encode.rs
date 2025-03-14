@@ -15,7 +15,6 @@
 //! typically big-endian decimals, etc.)
 //!
 
-use hex;
 use core::convert::{From, TryFrom};
 use core::{fmt, mem, u32};
 
@@ -495,12 +494,7 @@ impl Decodable for bool {
 impl Encodable for String {
     #[inline]
     fn consensus_encode<W: io::Write + ?Sized>(&self, w: &mut W) -> Result<usize, io::Error> {
-        let mut b = self.as_bytes();
-        let result = String::from_utf8(b.to_vec());
-        if let Err(_err) = &result {
-            let hex_str = Vec::from_hex(&self).unwrap();
-            b = &hex_str;
-        } 
+        let b = self.as_bytes();
         let vi_len = VarInt(b.len() as u64).consensus_encode(w)?;
         w.emit_slice(b)?;
         Ok(vi_len + b.len())
@@ -510,12 +504,8 @@ impl Encodable for String {
 impl Decodable for String {
     #[inline]
     fn consensus_decode<R: io::Read + ?Sized>(r: &mut R) -> Result<String, Error> {
-        let result = String::from_utf8(Decodable::consensus_decode(r)?);
-        if let Err(_err) = &result {
-            let buffer:Vec<u8> = Decodable::consensus_decode(r)?;
-            return Ok(buffer.to_lower_hex_string());
-        } 
-        Ok(result.unwrap())
+        String::from_utf8(Decodable::consensus_decode(r)?)
+            .map_err(|_| self::Error::ParseFailed("String was not valid UTF8"))
     }
 }
 
