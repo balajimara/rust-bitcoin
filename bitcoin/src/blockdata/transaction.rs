@@ -625,13 +625,13 @@ pub struct Transaction {
     /// Asset Precision
     pub precision: i32,
     /// Asset Symbol 
-    pub ticker: String,
+    pub ticker: Vec<u8>,
     /// Asset name 
-    pub headline: String,
+    pub headline: Vec<u8>,
     /// Asset hash for data 
     pub payload: Txid,
     /// Asset name 
-    pub payloaddata: String,
+    pub payloaddata: Vec<u8>,
     /// Block height or timestamp. Transaction cannot be included in a block until this height/time.
     ///
     /// ### Relevant BIPs
@@ -672,10 +672,10 @@ impl Transaction {
             version: self.version,
             assettype: self.assettype,
             precision: self.precision,
-            ticker: self.ticker.to_string(),
-            headline: self.headline.to_string(),
+            ticker: self.ticker,
+            headline: self.headline,
             payload: self.payload,
-            payloaddata: "".to_string(),
+            payloaddata: vec![],
             lock_time: self.lock_time,
             input: self
                 .input
@@ -1119,10 +1119,10 @@ impl Decodable for Transaction {
         let version = Version::consensus_decode_from_finite_reader(r)?;
         let mut assettype = 0;
         let mut precision = 0;
-        let mut ticker = "".to_string();
-        let mut headline = "".to_string();
+        let mut ticker = vec![];
+        let mut headline = vec![];
         let mut payload = Txid::all_zeros();
-        let mut payloaddata = "".to_string();
+        let mut payloaddata = vec![];
         if version.0 == 10 {
            assettype = i32::consensus_decode_from_finite_reader(r)?;
            precision = i32::consensus_decode_from_finite_reader(r)?;
@@ -2032,10 +2032,10 @@ mod tests {
             version: Version::TWO,
             assettype: 0,
             precision: 0,
-            headline: "".to_string(),
-            ticker: "".to_string(),
+            headline: vec![],
+            ticker: vec![],
             payload: Txid::all_zeros(),
-            payloaddata: "".to_string(),
+            payloaddata: vec![],
             lock_time: absolute::LockTime::ZERO,
             input: vec![],
             output: vec![],
