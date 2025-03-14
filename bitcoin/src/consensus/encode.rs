@@ -509,7 +509,7 @@ impl Decodable for String {
             let buffer:Vec<u8> = Decodable::consensus_decode(r)?;
             return Ok(buffer.to_lower_hex_string());
         } 
-        result
+        Ok(result.unwrap())
     }
 }
 
