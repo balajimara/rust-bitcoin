@@ -15,7 +15,7 @@
 //! typically big-endian decimals, etc.)
 //!
 
-use hex::prelude::*;
+use hex;
 use core::convert::{From, TryFrom};
 use core::{fmt, mem, u32};
 
@@ -496,9 +496,10 @@ impl Encodable for String {
     #[inline]
     fn consensus_encode<W: io::Write + ?Sized>(&self, w: &mut W) -> Result<usize, io::Error> {
         let mut b = self.as_bytes();
-        let result = String::from_utf8(b);
+        let result = String::from_utf8(b.to_vec());
         if let Err(_err) = &result {
-            b = &Vec::from_hex(self).unwrap();
+            let hex_str = Vec::from_hex(&self).unwrap();
+            b = &hex_str;
         } 
         let vi_len = VarInt(b.len() as u64).consensus_encode(w)?;
         w.emit_slice(b)?;
