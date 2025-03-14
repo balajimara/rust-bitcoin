@@ -672,8 +672,8 @@ impl Transaction {
             version: self.version,
             assettype: self.assettype,
             precision: self.precision,
-            ticker: self.ticker,
-            headline: self.headline,
+            ticker: self.ticker.clone(),
+            headline: self.headline.clone(),
             payload: self.payload,
             payloaddata: vec![],
             lock_time: self.lock_time,
@@ -1092,7 +1092,15 @@ impl Encodable for Transaction {
     fn consensus_encode<W: io::Write + ?Sized>(&self, w: &mut W) -> Result<usize, io::Error> {
         let mut len = 0;
         len += self.version.consensus_encode(w)?;
-
+        if self.version.0 == 10 {
+            len += self.assettype.consensus_encode(w)?;
+            len += self.precision.consensus_encode(w)?;
+            len += self.ticker.consensus_encode(w)?;
+            len += self.headline.consensus_encode(w)?;
+            len += self.payload.consensus_encode(w)?;
+            len += self.payloaddata.consensus_encode(w)?;
+        }
+        
         // Legacy transaction serialization format only includes inputs and outputs.
         if !self.use_segwit_serialization() {
             len += self.input.consensus_encode(w)?;
@@ -1126,10 +1134,10 @@ impl Decodable for Transaction {
         if version.0 == 10 {
            assettype = i32::consensus_decode_from_finite_reader(r)?;
            precision = i32::consensus_decode_from_finite_reader(r)?;
-           ticker = String::consensus_decode_from_finite_reader(r)?;
-           headline = String::consensus_decode_from_finite_reader(r)?;
+           ticker = Vec::<u8>::consensus_decode_from_finite_reader(r)?;
+           headline = Vec::<u8>::consensus_decode_from_finite_reader(r)?;
            payload = Txid::consensus_decode_from_finite_reader(r)?;
-           payloaddata = String::consensus_decode_from_finite_reader(r)?;
+           payloaddata = Vec::<u8>::consensus_decode_from_finite_reader(r)?;
         }
         let input = Vec::<TxIn>::consensus_decode_from_finite_reader(r)?;
         // segwit
