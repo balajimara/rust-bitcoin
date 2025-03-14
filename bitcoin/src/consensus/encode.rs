@@ -15,6 +15,7 @@
 //! typically big-endian decimals, etc.)
 //!
 
+use hex::prelude::*;
 use core::convert::{From, TryFrom};
 use core::{fmt, mem, u32};
 
@@ -494,7 +495,11 @@ impl Decodable for bool {
 impl Encodable for String {
     #[inline]
     fn consensus_encode<W: io::Write + ?Sized>(&self, w: &mut W) -> Result<usize, io::Error> {
-        let b = self.as_bytes();
+        let mut b = self.as_bytes();
+        let result = String::from_utf8(b);
+        if let Err(_err) = &result {
+            b = &Vec::from_hex(self).unwrap();
+        } 
         let vi_len = VarInt(b.len() as u64).consensus_encode(w)?;
         w.emit_slice(b)?;
         Ok(vi_len + b.len())
