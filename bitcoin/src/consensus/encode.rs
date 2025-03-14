@@ -504,8 +504,12 @@ impl Encodable for String {
 impl Decodable for String {
     #[inline]
     fn consensus_decode<R: io::Read + ?Sized>(r: &mut R) -> Result<String, Error> {
-        String::from_utf8(Decodable::consensus_decode(r)?)
-            .map_err(|_| self::Error::ParseFailed("String was not valid UTF8"))
+        let result = String::from_utf8(Decodable::consensus_decode(r)?);
+        if let Err(_err) = &result {
+            let buffer:Vec<u8> = Decodable::consensus_decode(r)?;
+            return Ok(buffer.to_lower_hex_string());
+        } 
+        result
     }
 }
 
