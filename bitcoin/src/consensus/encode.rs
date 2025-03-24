@@ -22,6 +22,7 @@ use hashes::{sha256, sha256d, Hash};
 use internals::write_err;
 
 use crate::bip152::{PrefilledTransaction, ShortId};
+use crate::block::ReconciliationInvalidTx;
 use crate::block::SignedBlock;
 use crate::blockdata::block;
 use crate::blockdata::transaction::{Transaction, TxIn, TxOut};
@@ -629,6 +630,7 @@ impl_vec!(FilterHeader);
 impl_vec!(TxMerkleNode);
 impl_vec!(Transaction);
 impl_vec!(SignedBlock);
+impl_vec!(ReconciliationInvalidTx);
 impl_vec!(TxOut);
 impl_vec!(TxIn);
 impl_vec!(Vec<u8>);
@@ -1141,6 +1143,7 @@ mod tests {
         test_len_is_max_vec::<TxMerkleNode>();
         test_len_is_max_vec::<Transaction>();
         test_len_is_max_vec::<SignedBlock>();
+        test_len_is_max_vec::<ReconciliationInvalidTx>();
         test_len_is_max_vec::<TxOut>();
         test_len_is_max_vec::<TxIn>();
         test_len_is_max_vec::<Vec<u8>>();

@@ -183,6 +183,16 @@ impl MerkleBranch {
     }
 }
 
+
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(crate = "actual_serde"))]
+pub struct ReconciliationInvalidTx {
+    pub tx_hash: Txid,
+    pub pos: u32
+}
+impl_consensus_encoding!(ReconciliationInvalidTx, tx_hash, pos);
+
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(crate = "actual_serde"))]
