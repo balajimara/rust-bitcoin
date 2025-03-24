@@ -19,7 +19,7 @@ use crate::consensus::{encode, Decodable, Encodable};
 use crate::hash_types::{TxMerkleNode, WitnessCommitment, WitnessMerkleNode, Wtxid};
 use crate::internal_macros::impl_consensus_encoding;
 use crate::pow::{CompactTarget, Target, Work};
-use crate::prelude::*;
+use crate::{prelude::*, TxIn};
 use crate::{io, merkle_tree, Network, VarInt};
 
 #[rustfmt::skip]                // Keep public re-exports separate.
@@ -188,7 +188,7 @@ impl MerkleBranch {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(crate = "actual_serde"))]
 pub struct ReconciliationInvalidTx {
-    pub tx_hash: Txid,
+    pub tx_hash: TxIn,
     pub pos: u32
 }
 impl_consensus_encoding!(ReconciliationInvalidTx, tx_hash, pos);
