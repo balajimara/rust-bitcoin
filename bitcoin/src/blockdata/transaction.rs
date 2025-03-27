@@ -723,21 +723,9 @@ impl Transaction {
     /// this will be equal to [`Transaction::txid()`].
     pub fn wtxid(&self) -> Wtxid {
         let mut enc = Wtxid::engine();
-        self.version.consensus_encode(&mut enc).expect("engines don't error");
-        if self.version.0 == 10 {
-           self.assettype.consensus_encode(&mut enc).expect("engines don't error");
-           self.precision.consensus_encode(&mut enc).expect("engines don't error");
-           self.ticker.consensus_encode(&mut enc).expect("engines don't error");
-           self.headline.consensus_encode(&mut enc).expect("engines don't error");
-           self.payload.consensus_encode(&mut enc).expect("engines don't error");
-
-           let payload_data = "".to_string();
-           payload_data.consensus_encode(&mut enc).expect("engines don't error");
-        }
-
-        self.input.consensus_encode(&mut enc).expect("engines don't error");
-        self.output.consensus_encode(&mut enc).expect("engines don't error");
-        self.lock_time.consensus_encode(&mut enc).expect("engines don't error");
+        let tx_details = self.clone();
+        tx_details.payloaddata = "".to_string();
+        self.consensus_encode(&mut enc).expect("engines don't error");
         Wtxid::from_engine(enc)
     }
 
