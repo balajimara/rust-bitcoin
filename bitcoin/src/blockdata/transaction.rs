@@ -725,7 +725,7 @@ impl Transaction {
         let mut enc = Wtxid::engine();
         let mut tx_details = self.clone();
         tx_details.payloaddata = "".to_string().as_bytes().to_vec();
-        self.consensus_encode(&mut enc).expect("engines don't error");
+        tx_details.consensus_encode(&mut enc).expect("engines don't error");
         Wtxid::from_engine(enc)
     }
 
