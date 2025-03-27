@@ -723,7 +723,7 @@ impl Transaction {
     /// this will be equal to [`Transaction::txid()`].
     pub fn wtxid(&self) -> Wtxid {
         let mut enc = Wtxid::engine();
-        let tx_details = self.clone();
+        let mut tx_details = self.clone();
         tx_details.payloaddata = "".to_string().as_bytes().to_vec();
         self.consensus_encode(&mut enc).expect("engines don't error");
         Wtxid::from_engine(enc)
